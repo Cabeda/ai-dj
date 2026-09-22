@@ -156,10 +156,13 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         log("[dry] skipping Sonic Pi + audio")
         return sess_path
 
-    sp.boot()
-    sp.set_volume(1.0)
+    # show the starter in the TUI immediately — boot can take ~15s
     script = state.render()
     session.save_script(sess_path, script)
+    sync_state(script)
+
+    sp.boot()
+    sp.set_volume(1.0)
     sp.run_code(script)
     log("[play] starter running (instant)")
     sync_state(script)

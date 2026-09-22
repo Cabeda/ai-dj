@@ -157,7 +157,15 @@ let animating = false
 let animTimer: ReturnType<typeof setInterval> | null = null
 let animTarget = ""
 let animPos = 0
+let animChunk = 4
 let stickBottom = true
+
+const SCRIPT_TITLE = " Sonic Pi script "
+const CURSOR = "▌"
+
+function setScriptTitle(suffix?: string) {
+  scriptPanel.title = suffix ? ` Sonic Pi script · ${suffix} ` : SCRIPT_TITLE
+}
 
 function setLog(text: string) {
   if (logView.height > 1 && logView.scrollY < logView.maxScrollY - 1) {
@@ -170,9 +178,6 @@ function setLog(text: string) {
     logView.scrollY = logView.maxScrollY
   }
 }
-
-const ANIM_MS = 14
-const ANIM_CHUNK = 4
 
 async function post(path: string, body: unknown) {
   try {
@@ -199,11 +204,14 @@ function cancelAnim(complete: boolean) {
     animTimer = null
   }
   if (complete && animTarget) {
-    animating = false
+    // still marked animating so onContentChange does not set dirty —
+    // we are writing server content, not a user edit
     scriptArea.setText(animTarget)
     scriptArea.gotoBufferEnd()
   }
   animating = false
+  animTarget = ""
+  setScriptTitle()
 }
 
 function animateScript(next: string) {
@@ -218,15 +226,19 @@ function animateScript(next: string) {
   animating = true
   animTarget = next
   animPos = i
-  scriptArea.setText(next.slice(0, animPos))
+  // adaptive: rewrite finishes in ~1s regardless of script size
+  animChunk = Math.max(2, Math.ceil((next.length - i) / 70))
+  setScriptTitle("rewriting…")
+  scriptArea.setText(next.slice(0, animPos) + CURSOR)
   scriptArea.gotoBufferEnd()
 
   animTimer = setInterval(() => {
-    animPos = Math.min(animPos + ANIM_CHUNK, animTarget.length)
-    scriptArea.setText(animTarget.slice(0, animPos))
+    animPos = Math.min(animPos + animChunk, animTarget.length)
+    const done = animPos >= animTarget.length
+    scriptArea.setText(done ? animTarget : animTarget.slice(0, animPos) + CURSOR)
     scriptArea.gotoBufferEnd()
-    if (animPos >= animTarget.length) cancelAnim(false)
-  }, ANIM_MS)
+    if (done) cancelAnim(false)
+  }, 16)
 }
 
 scriptArea.on("focused", () => {
