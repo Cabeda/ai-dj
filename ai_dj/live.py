@@ -24,6 +24,7 @@ from . import llm, session
 from .backend import SonicPiBackend
 from .state import DJState, parse_layers
 from .templates import default_layers, random_layers
+from .strudel_templates import build as strudel_build, archetype_name
 
 CAPTURE_SECONDS = 10
 TICK_SECONDS = 10
@@ -169,17 +170,26 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
 
     if session_id:
         ver, script = session.load_latest(session_id)
-        state = DJState.from_script(script, model=model)
+        state = DJState.from_script(script, model=model, lang=lang)
         sess_path = os.path.join(session.BASE, session_id)
         log(f"[session] resumed {session_id} at {ver} "
             f"({len(state.layers)} layers, {state.bpm}bpm)")
+    elif lang == "strudel":
+        archetype = archetype_name(new_seed)
+        layers, info = strudel_build(archetype, seed=new_seed)
+        state = DJState(bpm=info["bpm"], key=info["key"], mode=info["mode"],
+                        layers=layers, model=model, lang=lang)
+        sess_path = session.create_session(info)
+        log(f"[session] new session: {os.path.basename(sess_path)}"
+            f" | archetype: {archetype}"
+            + (f" | guide: {prompt}" if prompt else ""))
     else:
         if new_seed is None:
             layers, info = default_layers()
         else:
             layers, info = random_layers(seed=new_seed)
         state = DJState(bpm=info["bpm"], key=info["key"], mode=info["scale"],
-                        layers=layers, model=model)
+                        layers=layers, model=model, lang=lang)
         sess_path = session.create_session(info)
         log(f"[session] new session: {os.path.basename(sess_path)}"
             + (f" | guide: {prompt}" if prompt else ""))

@@ -29,11 +29,14 @@ REDUCE_ORDER = ["lead", "arp", "fx", "perc", "hats", "drone", "sub", "pad", "bas
 CORE_LAYERS = {"kick", "bass"}
 
 
-def parse_layers(script):
-    """Split a rendered script into {layer_name: live_loop_code}.
+def parse_layers(script, lang="sonic_pi"):
+    """Split a rendered script into {layer_name: layer_code}.
 
-    Assumes top-level live_loop blocks (which render() guarantees).
+    sonic_pi: top-level `live_loop :name do` blocks (what render() guarantees).
+    strudel:  top-level `$ name: <pattern>` marker comments that render() emits.
     """
+    if lang == "strudel":
+        return _parse_layers_strudel(script)
     matches = list(re.finditer(r"(?m)^live_loop\s+:(\w+)\s+do", script))
     layers = {}
     for i, m in enumerate(matches):
@@ -43,9 +46,22 @@ def parse_layers(script):
     return layers
 
 
+def _parse_layers_strudel(script):
+    """Split a Strudel script on `// layer: <name>` markers (indentation ok)."""
+    matches = list(re.finditer(r"(?m)^\s*//\s*layer:\s*(\w+)\s*$", script))
+    layers = {}
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(script)
+        body = script[start:end].strip().rstrip(",").strip()
+        if body:
+            layers[m.group(1)] = body
+    return layers
+
+
 def parse_header(script):
-    """Read the '# state ...' comment line back into a dict."""
-    m = re.search(r"(?m)^#\s*state\s+(.+)$", script)
+    """Read the '# state ...' / '// state ...' comment line back into a dict."""
+    m = re.search(r"(?m)^(?:\#|//)\s*state\s+(.+)$", script)
     if not m:
         return {}
     out = {}
@@ -58,10 +74,11 @@ def parse_header(script):
 
 class DJState:
     def __init__(self, bpm, key, mode, layers, energy=0.35, mood="",
-                 section_index=0, model=""):
+                 section_index=0, model="", lang="sonic_pi"):
         self.bpm = int(bpm)
         self.key = key
         self.mode = mode
+        self.lang = lang
         self.layers = dict(layers)
         self.energy = float(energy)
         self.mood = mood
@@ -182,6 +199,8 @@ class DJState:
             f"last action: {self.last_action or 'none'}")
 
     def render(self):
+        if self.lang == "strudel":
+            return self._render_strudel()
         header = (
             "# ai-dj live - generated script\n"
             f"# model: {self.model}\n"
@@ -192,9 +211,23 @@ class DJState:
         body = f"use_bpm {self.bpm}\n\n" + "\n\n".join(self.layers.values())
         return header + body
 
+    def _render_strudel(self):
+        header = (
+            "// ai-dj live - generated script\n"
+            f"// model: {self.model}\n"
+            f"// state bpm={self.bpm} key={self.key} mode={self.mode} "
+            f"energy={self.energy:.2f} section={self.section}\n"
+            f"// last: {self.last_action}\n"
+            f"\nsetcpm({self.bpm}/4)\n\n"
+            "stack(\n")
+        parts = []
+        for name, code in self.layers.items():
+            parts.append(f"  // layer: {name}\n  {code}")
+        return header + ",\n".join(parts) + "\n)\n"
+
     @classmethod
-    def from_script(cls, script, model=""):
-        layers = parse_layers(script)
+    def from_script(cls, script, model="", lang="sonic_pi"):
+        layers = parse_layers(script, lang)
         h = parse_header(script)
         return cls(
             bpm=int(h.get("bpm", 120)),
@@ -203,15 +236,17 @@ class DJState:
             layers=layers,
             energy=float(h.get("energy", 0.35)),
             model=model,
+            lang=lang,
         )
 
-    def adopt_seed(self, ruby, hearing=None):
+    def adopt_seed(self, ruby, hearing=None, lang=None):
         """Replace layers with those parsed from a seed script, and adopt its
         tempo/key/mode so the rest of the session stays consistent."""
-        layers = parse_layers(ruby or "")
+        lang = lang or self.lang
+        layers = parse_layers(ruby or "", lang)
         if layers:
             self.layers = layers
-        m = re.search(r"use_bpm\s+(\d+)", ruby or "")
+        m = re.search(r"(?:use_bpm|setcpm\()\s*(\d+)", ruby or "")
         if m:
             self.bpm = int(m.group(1))
         if hearing:

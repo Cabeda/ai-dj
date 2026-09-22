@@ -45,15 +45,25 @@ const { transpiler } = await import("@strudel/transpiler")
 const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds, renderPatternAudio } =
   await import("@strudel/webaudio")
 const { registerSoundfonts } = await import("@strudel/soundfonts")
+const { samples } = await import("superdough")
+await import("@strudel/tonal") // registers .scale/.chord/.voicing
 
 const { evalScope, evaluate, getTrigger, Cyclist } = core as any
 await evalScope(core, mini)
+
 registerSynthSounds?.()
 registerZZFXSounds?.()
 try {
   registerSoundfonts?.() // General MIDI soundfonts: the classical palette (gm_*)
 } catch (e: any) {
   log(`soundfonts unavailable: ${e?.message ?? e}`)
+}
+try {
+  // drum samples (bd, hh, sd…) — the canonical Dirt-Samples pack
+  await samples("github:tidalcycles/dirt-samples")
+  log("drum samples loaded")
+} catch (e: any) {
+  log(`drum samples unavailable: ${e?.message ?? e}`)
 }
 installWavSink()
 
@@ -70,6 +80,21 @@ const scheduler = new Cyclist({
   getTime: () => ctx.currentTime,
 })
 scheduler.setCps(0.5) // 120 bpm in 4/4
+
+// The REPL defines setcpm inside repl(); we do not use repl(), so a script's
+// opening setcpm(<bpm>/4) had no implementation. Expose it against our
+// scheduler, and remember the cps so capture renders at the right tempo.
+const setcpm = (cpm: number) => {
+  const cps = Number(cpm) / 60
+  if (Number.isFinite(cps) && cps > 0) scheduler.setCps(cps)
+  return (core as any).silence
+}
+const setcps = (cps: number) => {
+  const v = Number(cps)
+  if (Number.isFinite(v) && v > 0) scheduler.setCps(v)
+  return (core as any).silence
+}
+await evalScope({ setcpm, setcps })
 
 let currentCode = ""
 let pattern: any = null
