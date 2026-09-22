@@ -12,15 +12,22 @@ TUI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def launch(a, provider, model, base_url, key):
-    from .cli import make_sonic
-
     ctl = control_mod.Control()
-    port = getattr(a, "port", 8765)
-    srv = control_mod.make_server(ctl, port)
+    want = getattr(a, "port", 8765)
+    try:
+        srv = control_mod.make_server(ctl, want)
+    except OSError as e:
+        print(f"[tui] {e}", file=sys.stderr)
+        sys.exit(2)
+    port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"[tui] control server: http://127.0.0.1:{port}")
+    # no print() after this point — OpenTUI owns stdout
+    if port != want:
+        ctl.log(f"[tui] port {want} busy; using {port}")
+    ctl.log(f"[tui] control server: http://127.0.0.1:{port}")
 
-    sp = make_sonic(a)
+    from .cli import make_sonic
+    sp = make_sonic(a, log=ctl.log)
     ctl.set_state(running=True, provider=provider, model=model)
 
     def loop():
@@ -44,7 +51,7 @@ def launch(a, provider, model, base_url, key):
     try:
         subprocess.run(["bun", "run", os.path.join(TUI_DIR, "index.ts")], env=env)
     except FileNotFoundError:
-        print("[tui] bun not found; install from https://bun.sh")
+        print("[tui] bun not found; install from https://bun.sh", file=sys.stderr)
         sys.exit(2)
     finally:
         sp.shutdown()

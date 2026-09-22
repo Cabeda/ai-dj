@@ -18,6 +18,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 ZEN_GO_BASE = "https://opencode.ai/zen/go/v1"
 LOCAL_BASE_DEFAULT = os.environ.get("LLAMA_BASE_URL", "http://127.0.0.1:8080/v1")
@@ -231,7 +232,7 @@ def evolve_layer(audio_path, key, model=DEFAULT_MODEL, session_id=None,
     except Exception as e:
         if provider != "local" or not layer_code:
             raise
-        print(f"[llm] local audio failed ({e}); retrying text-only")
+        print(f"[llm] local audio failed ({e}); retrying text-only", file=sys.stderr)
         body["messages"][1]["content"] = (
             f"Your model cannot hear audio. Evolve layer '{layer}' "
             f"({direction}) of this set.\n\n```ruby\n{layer_code}\n```")

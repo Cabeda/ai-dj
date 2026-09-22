@@ -93,6 +93,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def make_server(control, port):
+class _Server(http.server.ThreadingHTTPServer):
+    # TIME_WAIT from a previous run must not block a restart
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+def make_server(control, port, attempts=10):
+    """Bind 127.0.0.1:port; if busy, try port+1 .. port+attempts-1.
+
+    Raises OSError with a clear message if none are free.
+    """
     handler = type("BoundHandler", (_Handler,), {"control": control})
-    return http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    last = None
+    for i in range(attempts):
+        try:
+            return _Server(("127.0.0.1", port + i), handler)
+        except OSError as e:
+            last = e
+    raise OSError(
+        f"control port(s) {port}..{port + attempts - 1} unavailable: {last}"
+    )

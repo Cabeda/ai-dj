@@ -90,16 +90,16 @@ def resolve_llm(a):
     return "go", a.model or llm.DEFAULT_MODEL, None, key
 
 
-def make_sonic(a):
-    sp = SonicPi()
+def make_sonic(a, log=print):
+    sp = SonicPi(log=log)
     if getattr(a, "output", None):
         sp.audio_output = a.output
-        print(f"[audio] pinned output device: {sp.audio_output}")
+        log(f"[audio] pinned output device: {sp.audio_output}")
     else:
         from .audio import active_output
         act = active_output()
         if act:
-            print(f"[audio] following system default output: {act['name']} ({act['transport']})")
+            log(f"[audio] following system default output: {act['name']} ({act['transport']})")
     return sp
 
 

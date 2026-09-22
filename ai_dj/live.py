@@ -31,6 +31,31 @@ SIGNATURE_CHANGE = 3.0
 VARIATION_EVERY = 30
 
 
+def valid_ruby(code):
+    """True if `ruby -c` accepts the script. Catches LLM syntax errors
+    before they hit Sonic Pi's spider (which only reports them at runtime)."""
+    import subprocess
+    import tempfile
+
+    if not code or not code.strip():
+        return False
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".rb", delete=False) as f:
+            f.write(code)
+            path = f.name
+        r = subprocess.run(["ruby", "-c", path], capture_output=True, text=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return True  # no system ruby — don't block playback on a missing checker
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
 class Feedback:
     """Collects user feedback typed on stdin; drained once per iteration."""
 
@@ -99,9 +124,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     fb = Feedback(feedback_enabled)
 
     def log(line):
-        print(line)
+        # TUI owns the terminal — never print there; stdout collides with OpenTUI.
         if control:
             control.log(line)
+        else:
+            print(line)
 
     def sync_state(script):
         if control:
@@ -143,8 +170,13 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             decided = llm.seed_script(prompt, key, model=model, provider=provider,
                                       base_url=base_url, reference=reference,
                                       reasoning=reasoning)
-            state.adopt_seed(decided.get("ruby", ""), decided.get("hearing"))
+            ruby = decided.get("ruby", "")
+            if not valid_ruby(ruby):
+                raise ValueError("seed script failed ruby -c")
+            state.adopt_seed(ruby, decided.get("hearing"))
             script = state.render()
+            if not valid_ruby(script):
+                raise ValueError("rendered seed failed ruby -c")
             name = session.save_script(sess_path, script)
             sp.run_code(script)
             log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
@@ -167,16 +199,19 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             # manual edit from the TUI takes precedence
             manual = control.drain_manual_script() if control else None
             if manual:
-                layers = parse_layers(manual)
-                if layers:
-                    state.layers = layers
-                    state.last_action = "manual edit"
-                script = state.render() if not layers else manual
-                session.save_script(sess_path, script)
-                sp.run_code(script)
-                log(f"[manual] applied user edit ({len(state.layers)} layers)")
-                sync_state(script)
-                prev_sig = None
+                if not valid_ruby(manual):
+                    log("[manual] rejected edit (ruby -c failed)")
+                else:
+                    layers = parse_layers(manual)
+                    if layers:
+                        state.layers = layers
+                        state.last_action = "manual edit"
+                    script = state.render() if not layers else manual
+                    session.save_script(sess_path, script)
+                    sp.run_code(script)
+                    log(f"[manual] applied user edit ({len(state.layers)} layers)")
+                    sync_state(script)
+                    prev_sig = None
 
             capfile = sp.capture(cap, CAPTURE_SECONDS)
             if not capfile:
@@ -232,8 +267,26 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     sync_state(script)
                 continue
 
+            # validate BEFORE mutating state — a bad patch must not
+            # overwrite the last-good layers in state/render.
+            ruby = (decided.get("ruby") or "").strip()
+            kind = (decided.get("op") or {}).get("kind", "modify")
+            if kind != "remove" and ruby and not valid_ruby(
+                f"use_bpm {state.bpm}\n\n{ruby}"
+            ):
+                log(f"[llm] seed/evolve returned invalid Ruby; keeping previous script")
+                last_llm = time.time()
+                continue
+
+            prev_layers = dict(state.layers)
             state.apply_op(decided)
             script = state.render()
+            if not valid_ruby(script):
+                state.layers = prev_layers
+                script = state.render()
+                log(f"[llm] rendered script invalid; rolled back")
+                last_llm = time.time()
+                continue
             name = session.save_script(sess_path, script)
             sp.run_code(script)
             last_llm = time.time()
