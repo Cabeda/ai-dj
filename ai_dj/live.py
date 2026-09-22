@@ -22,7 +22,7 @@ import time
 
 from . import llm, session, sonicpi
 from .state import DJState, parse_layers
-from .templates import random_layers
+from .templates import default_layers, random_layers
 
 CAPTURE_SECONDS = 10
 TICK_SECONDS = 10
@@ -146,7 +146,10 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         log(f"[session] resumed {session_id} at {ver} "
             f"({len(state.layers)} layers, {state.bpm}bpm)")
     else:
-        layers, info = random_layers(seed=new_seed)
+        if new_seed is None:
+            layers, info = default_layers()
+        else:
+            layers, info = random_layers(seed=new_seed)
         state = DJState(bpm=info["bpm"], key=info["key"], mode=info["scale"],
                         layers=layers, model=model)
         sess_path = session.create_session(info)
@@ -168,54 +171,137 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     log("[play] starter running (instant)")
     sync_state(script)
 
+    prev_sig = None
+    apply_lock = threading.Lock()
+    manual_rev = [0]
+
+    def apply_manual(manual):
+        nonlocal script, prev_sig
+        if not valid_ruby(manual):
+            log("[manual] rejected edit (ruby -c failed)")
+            return
+        with apply_lock:
+            layers = parse_layers(manual)
+            if layers:
+                state.layers = layers
+            state.last_action = "manual edit"
+            script = manual
+            session.save_script(sess_path, script)
+            sp.run_code(script)
+            sync_state(script)
+            prev_sig = None
+            manual_rev[0] += 1
+        log(f"[manual] applied user edit ({len(state.layers)} layers)")
+
+    def run_command(cmd):
+        if cmd == "stop":
+            sp.stop_all()
+            log("[cmd] stopped")
+        elif cmd == "resume":
+            with apply_lock:
+                sp.run_code(script)
+            log("[cmd] resumed")
+
+    wake = threading.Event()
+
+    def watcher():
+        # TUI edits must not wait for capture/LLM work in the main loop
+        while True:
+            manual = control.drain_manual_script()
+            if manual:
+                apply_manual(manual)
+            for cmd in control.drain_commands():
+                run_command(cmd)
+            if control.has_feedback():
+                wake.set()
+            time.sleep(0.2)
+
+    if control:
+        threading.Thread(target=watcher, daemon=True).start()
+
     if prompt:
         log(f"[seed] generating first script for '{prompt}'...")
+        seed_rev = manual_rev[0]
         try:
             decided = llm.seed_script(prompt, key, model=model, provider=provider,
                                       base_url=base_url, reference=reference,
                                       reasoning=reasoning)
-            ruby = decided.get("ruby", "")
-            if not valid_ruby(ruby):
-                raise ValueError("seed script failed ruby -c")
-            state.adopt_seed(ruby, decided.get("hearing"))
-            script = state.render()
-            if not valid_ruby(script):
-                raise ValueError("rendered seed failed ruby -c")
-            name = session.save_script(sess_path, script)
-            sp.run_code(script)
-            log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
-            sync_state(script)
+            if manual_rev[0] != seed_rev:
+                log("[seed] discarded — manual edit applied during generation")
+            else:
+                ruby = decided.get("ruby", "")
+                if not valid_ruby(ruby):
+                    raise ValueError("seed script failed ruby -c")
+                state.adopt_seed(ruby, decided.get("hearing"))
+                script = state.render()
+                if not valid_ruby(script):
+                    raise ValueError("rendered seed failed ruby -c")
+                name = session.save_script(sess_path, script)
+                sp.run_code(script)
+                log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
+                sync_state(script)
         except Exception as e:
             log(f"[seed] failed ({e}); keeping random starter")
 
     if feedback_enabled and sys.stdin and sys.stdin.isatty():
         log("[feedback] type feedback + Enter anytime (e.g. 'more bass')")
 
-    prev_sig = None
     last_llm = 0.0
     last_var = time.time()
     ticks = 0
+
     try:
         while True:
-            time.sleep(tick)
+            # wake early when the TUI sends feedback, instead of waiting a tick
+            wake.wait(tick)
+            wake.clear()
             ticks += 1
+            rev_before = manual_rev[0]
 
-            # manual edit from the TUI takes precedence
-            manual = control.drain_manual_script() if control else None
-            if manual:
-                if not valid_ruby(manual):
-                    log("[manual] rejected edit (ruby -c failed)")
-                else:
-                    layers = parse_layers(manual)
-                    if layers:
-                        state.layers = layers
-                        state.last_action = "manual edit"
-                    script = state.render() if not layers else manual
-                    session.save_script(sess_path, script)
+            items = control.drain_feedback() if control else []
+            replace_text = "; ".join(i["text"] for i in items if i.get("mode") == "replace")
+            guide_text = "; ".join(i["text"] for i in items if i.get("mode") != "replace")
+            stdin_fb = fb.drain()
+            if stdin_fb:
+                guide_text = f"{guide_text}; {stdin_fb}" if guide_text else stdin_fb
+
+            # instant replacement: full new set, no audio sample needed
+            if replace_text:
+                log(f"[replace] building a new set for '{replace_text}'...")
+                replace_rev = manual_rev[0]
+                try:
+                    decided = llm.seed_script(
+                        replace_text, key, model=model, provider=provider,
+                        base_url=base_url, reference=reference, reasoning=reasoning)
+                except Exception as e:
+                    log(f"[replace] ERROR: {e}")
+                    continue
+                if manual_rev[0] != replace_rev:
+                    log("[replace] discarded — manual edit applied during call")
+                    continue
+                ruby = (decided.get("ruby") or "").strip()
+                if not valid_ruby(ruby):
+                    log("[replace] invalid Ruby; keeping current set")
+                    last_llm = time.time()
+                    continue
+                prev = (dict(state.layers), state.bpm, state.key, state.mode, state.mood)
+                state.adopt_seed(ruby, decided.get("hearing"))
+                script = state.render()
+                if not valid_ruby(script):
+                    (state.layers, state.bpm, state.key,
+                     state.mode, state.mood) = prev
+                    script = state.render()
+                    log("[replace] rendered script invalid; keeping current set")
+                    last_llm = time.time()
+                    continue
+                with apply_lock:
+                    name = session.save_script(sess_path, script)
                     sp.run_code(script)
-                    log(f"[manual] applied user edit ({len(state.layers)} layers)")
                     sync_state(script)
-                    prev_sig = None
+                last_llm = time.time()
+                log(f"[replace] applied {name} ({len(state.layers)} layers, "
+                    f"{state.bpm}bpm {state.key})")
+                continue
 
             capfile = sp.capture(cap, CAPTURE_SECONDS)
             if not capfile:
@@ -225,9 +311,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             changed = _diff(prev_sig, sig) if prev_sig is not None else 0.0
             prev_sig = sig
 
-            feedback = fb.drain()
-            if not feedback and control:
-                feedback = control.drain_feedback()
+            feedback = guide_text
 
             boundary = state.section_elapsed() >= state.section_seconds()
             if boundary:
@@ -241,10 +325,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             if not due:
                 if (time.time() - last_var) >= VARIATION_EVERY and state.variation():
                     last_var = time.time()
-                    script = state.render()
-                    sp.run_code(script)
+                    with apply_lock:
+                        script = state.render()
+                        sp.run_code(script)
+                        sync_state(script)
                     log(f"[tick {ticks}] deterministic variation (no model call)")
-                    sync_state(script)
                 else:
                     log(f"[tick {ticks}] hold (diff={changed:.1f})")
                 continue
@@ -266,9 +351,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             except Exception as e:
                 log(f"[llm] ERROR: {e} — deterministic fallback")
                 if state.variation():
-                    script = state.render()
-                    sp.run_code(script)
-                    sync_state(script)
+                    with apply_lock:
+                        script = state.render()
+                        sp.run_code(script)
+                        sync_state(script)
+                continue
+
+            if manual_rev[0] != rev_before:
+                log("[llm] discarded result — manual edit applied during call")
                 continue
 
             # validate BEFORE mutating state — a bad patch must not
@@ -283,16 +373,18 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 continue
 
             prev_layers = dict(state.layers)
-            state.apply_op(decided)
-            script = state.render()
-            if not valid_ruby(script):
-                state.layers = prev_layers
+            with apply_lock:
+                state.apply_op(decided)
                 script = state.render()
-                log(f"[llm] rendered script invalid; rolled back")
-                last_llm = time.time()
-                continue
-            name = session.save_script(sess_path, script)
-            sp.run_code(script)
+                if not valid_ruby(script):
+                    state.layers = prev_layers
+                    script = state.render()
+                    log(f"[llm] rendered script invalid; rolled back")
+                    last_llm = time.time()
+                    continue
+                name = session.save_script(sess_path, script)
+                sp.run_code(script)
+                sync_state(script)
             last_llm = time.time()
             u = decided.get("_usage", {})
             log(f"[live-code] {name}: {decided.get('decision', {}).get('action', '')[:80]}")

@@ -17,6 +17,7 @@ class Control:
         self.log_lines = []
         self.feedback = []
         self.manual_script = None
+        self.commands = []
 
     def set_state(self, **kw):
         with self._lock:
@@ -27,18 +28,22 @@ class Control:
             self.log_lines.append(line)
             self.log_lines = self.log_lines[-400:]
 
-    def push_feedback(self, text):
+    def push_feedback(self, text, mode="guide"):
         text = (text or "").strip()
         if text:
             with self._lock:
-                self.feedback.append(text)
+                self.feedback.append({"text": text, "mode": mode})
                 # loop may be stalled between drains — don't grow forever
                 self.feedback = self.feedback[-100:]
 
     def drain_feedback(self):
         with self._lock:
             items, self.feedback = self.feedback, []
-        return "; ".join(items)
+        return items
+
+    def has_feedback(self):
+        with self._lock:
+            return bool(self.feedback)
 
     def push_manual_script(self, ruby):
         with self._lock:
@@ -48,6 +53,18 @@ class Control:
         with self._lock:
             s, self.manual_script = self.manual_script, None
         return s
+
+    def push_command(self, cmd):
+        cmd = (cmd or "").strip()
+        if cmd:
+            with self._lock:
+                self.commands.append(cmd)
+                self.commands = self.commands[-20:]
+
+    def drain_commands(self):
+        with self._lock:
+            items, self.commands = self.commands, []
+        return items
 
     def snapshot(self):
         with self._lock:
@@ -83,10 +100,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             data = {}
         if self.path.startswith("/feedback"):
-            self.control.push_feedback(data.get("text", ""))
+            self.control.push_feedback(data.get("text", ""), data.get("mode", "guide"))
             self._send(200, {"ok": True})
         elif self.path.startswith("/script"):
             self.control.push_manual_script(data.get("ruby", ""))
+            self._send(200, {"ok": True})
+        elif self.path.startswith("/command"):
+            self.control.push_command(data.get("cmd", ""))
             self._send(200, {"ok": True})
         else:
             self._send(404, {"error": "not found"})

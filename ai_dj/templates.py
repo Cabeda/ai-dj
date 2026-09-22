@@ -163,6 +163,26 @@ def random_layers(seed=None):
     return layers, info
 
 
+# Minimal, audible starting point shown in the TUI editor and played at launch.
+# Keep in sync with DEFAULT_SCRIPT in tui/index.ts.
+DEFAULT_BPM = 90
+DEFAULT_KEY = "a"
+DEFAULT_SCALE = "minor"
+DEFAULT_TEMPLATE = "techno_kick"
+
+
+def default_layers():
+    """Return ({layer_name: live_loop_code}, info) for the minimal starter."""
+    body = _BODIES[DEFAULT_TEMPLATE].format(
+        bpm=DEFAULT_BPM, key=DEFAULT_KEY, scale=DEFAULT_SCALE, synth="saw",
+        scale_notes=str(_scale_notes(DEFAULT_KEY, DEFAULT_SCALE)), seed=None)
+    layers = {TEMPLATE_LAYER[DEFAULT_TEMPLATE]: body}
+    info = {"seed": None, "bpm": DEFAULT_BPM, "key": DEFAULT_KEY,
+            "scale": DEFAULT_SCALE, "synth": "saw",
+            "templates": [DEFAULT_TEMPLATE]}
+    return layers, info
+
+
 def random_starter(seed=None):
     rng = random.Random(seed)
     bpm = _rand_bpm()
