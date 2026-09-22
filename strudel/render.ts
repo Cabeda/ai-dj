@@ -41,33 +41,64 @@ g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 
 const { OfflineAudioContext } = await import("node-web-audio-api")
 
-// superdough's reverb generator builds its own OfflineAudioContext and waits on
-// `context.oncomplete`. node-web-audio-api resolves startRendering() as a
-// promise instead, so that callback never fires and the reverb impulse response
-// never resolves -> the render hangs forever. Bridge the promise to the
-// callback so reverb works offline.
-{
-  const proto = OfflineAudioContext.prototype as any
-  const realStart = proto.startRendering
-  proto.startRendering = function () {
-    const p = realStart.call(this)
-    if (typeof p?.then === "function") {
-      p.then((buffer: any) => {
-        try {
-          this.oncomplete?.({ renderedBuffer: buffer })
-        } catch {}
-      })
-    }
-    return p
-  }
-}
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")
-const { registerSynthSounds, registerZZFXSounds } = await import("@strudel/webaudio")
+const sd = await import("@strudel/webaudio")
+const { registerSynthSounds, registerZZFXSounds } = sd
 const { registerSoundfonts } = await import("@strudel/soundfonts")
-const sd = await import("superdough")
-const { SuperdoughAudioController } = await import("superdough/superdoughoutput.mjs")
+
+// superdough's reverb builds its impulse response in a *separate*
+// OfflineAudioContext (reverbGen) and waits on `context.oncomplete`, which
+// node-web-audio-api never fires (it resolves startRendering() as a promise).
+// The resulting buffer then belongs to the wrong context and cannot be
+// connected. Rather than patch around it, generate the IR in the render
+// context: an exponentially-decaying noise burst, one-pole lowpassed.
+{
+  const { BaseAudioContext } = await import("node-web-audio-api")
+  const proto = (BaseAudioContext as any).prototype
+  proto.createReverb = function (
+    duration = 2,
+    fade = 0.1,
+    lp = 15000,
+    dim = 1000,
+    ir?: any,
+    irspeed?: number,
+    irbegin?: number,
+  ) {
+    const ac = this
+    const convolver = ac.createConvolver()
+    convolver.generate = () => {
+      const total = Math.max(0.05, duration * 1.5)
+      const frames = Math.round(total * ac.sampleRate)
+      const decayFrames = Math.max(1, Math.round(duration * ac.sampleRate))
+      const fadeFrames = Math.max(0, Math.round(fade * ac.sampleRate))
+      const decay = Math.pow(1 / 1000, 1 / decayFrames)
+      const buffer = ac.createBuffer(2, frames, ac.sampleRate)
+      // one-pole lowpass coefficient from the requested start frequency
+      const cutoff = Math.min(lp || 15000, ac.sampleRate / 2)
+      const a = 1 - Math.exp((-2 * Math.PI * cutoff) / ac.sampleRate)
+      for (let ch = 0; ch < 2; ch++) {
+        const data = buffer.getChannelData(ch)
+        let prev = 0
+        for (let i = 0; i < frames; i++) {
+          const noise = Math.random() * 2 - 1
+          prev += a * (noise - prev)
+          let v = prev * Math.pow(decay, i)
+          if (fadeFrames && i < fadeFrames) v *= i / fadeFrames
+          data[i] = v
+        }
+      }
+      convolver.buffer = buffer
+      return buffer
+    }
+    // superdough calls generate() itself; build it eagerly too so the buffer
+    // is present even if that path differs.
+    convolver.generate()
+    return convolver
+  }
+}
+
 await import("@strudel/tonal")
 
 await core.evalScope(core, mini)
@@ -134,7 +165,11 @@ async function render(req: any) {
     sampleRate,
   })
   sd.setAudioContext(oc)
-  sd.setSuperdoughAudioController(new SuperdoughAudioController(oc))
+  // Do NOT construct a controller from the subpath: it is a different
+  // module instance of the context singleton, so superdough's own gainNode()
+  // would see a null context and build a stray live AudioContext (which made
+  // every room() render fail). Setting null makes superdough build it from oc.
+  sd.setSuperdoughAudioController(null)
   await sd.initAudio({})
 
   // resolve the pattern (no scheduler needed: queryArc is pure)
