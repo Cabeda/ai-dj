@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+venv/
+
+# runtime data: generated sessions and captured audio
+sessions/
+*.wav
+*.mp3
+/tmp/
+
+# compiled helper binary
+tools/audiodev
+tools/audiodev.dSYM/
+
+# local secrets (never commit)
+.env
+env
+*.env
