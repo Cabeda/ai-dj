@@ -118,6 +118,19 @@ class SonicPiBackend(SoundBackend):
         self._sp.shutdown()
 
 
+def make_strudel_backend(log=print, bundle=None):
+    """Build the Strudel backend: a Bun host speaking the stdio protocol.
+
+    Opt-in for now — see strudel/README.md for status. The host is bundled at
+    strudel/host.bundle.mjs (run `bash strudel/build.sh`).
+    """
+    import os
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    host = bundle or os.path.join(root, "strudel", "host.bundle.mjs")
+    return StdioBackend(["bun", host], name="strudel", log=log)
+
+
 class StdioBackend(SoundBackend):
     """Out-of-process backend over line-delimited JSON on stdio.
 

@@ -24,19 +24,25 @@ ZEN_GO_BASE = "https://opencode.ai/zen/go/v1"
 LOCAL_BASE_DEFAULT = os.environ.get("LLAMA_BASE_URL", "http://127.0.0.1:8080/v1")
 DEFAULT_MODEL = "mimo-v2.6-flash"
 
-_REFERENCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "reference", "sonic_pi.md")
+_REFERENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reference")
+_REFERENCE_PATHS = {
+    "sonic_pi": os.path.join(_REFERENCE_DIR, "sonic_pi.md"),
+    "strudel": os.path.join(_REFERENCE_DIR, "strudel.md"),
+}
+LANGS = tuple(_REFERENCE_PATHS)
+DEFAULT_LANG = "sonic_pi"
 
 
-def _load_reference():
+def _load_reference(lang=DEFAULT_LANG):
     try:
-        with open(_REFERENCE_PATH) as f:
+        with open(_REFERENCE_PATHS[lang]) as f:
             return f.read()
-    except OSError:
+    except (OSError, KeyError):
         return ""
 
 
-_EVOLVE = """You are the live-coding engine of a generative radio DJ.
+_EVOLVE = {
+    "sonic_pi": """You are the live-coding engine of a generative radio DJ.
 You evolve ONE layer of a Sonic Pi live set at a time, smoothly and gradually.
 
 Given: the session state, the layer to change, the direction to take, that
@@ -60,9 +66,37 @@ HARD RULES:
 - No text outside the JSON.
 
 # Sonic Pi Reference
-"""
+""",
+    "strudel": """You are the live-coding engine of a generative radio DJ.
+You evolve ONE layer of a Strudel live set at a time, smoothly and gradually.
 
-_SEED = """You are the live-coding engine of a generative radio DJ.
+Given: the session state, the layer to change, the direction to take, that
+layer's current pattern (if any), a 10s audio sample, and optional user feedback.
+
+Return ONLY valid JSON, no markdown:
+{
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "op": {"kind": "add|modify|remove", "layer": "<the given layer>"},
+  "ruby": "<ONE Strudel pattern expression for that layer>"
+}
+
+HARD RULES:
+- Change ONLY the given layer. Never touch other layers.
+- Do NOT call setcpm/setcps; the session tempo is fixed.
+- Keep the session key and mode; stay in the current vibe.
+- This is one incremental step, not a new song.
+- "ruby" must be a single Strudel pattern expression: no stack(), no $: labels.
+- Choose timbres only from the instrument palette.
+- Precede each musical choice with a "// why" comment.
+- No text outside the JSON.
+
+# Strudel Reference
+""",
+}
+
+_SEED = {
+    "sonic_pi": """You are the live-coding engine of a generative radio DJ.
 Create the FIRST script for a new live set, based on the vibe given.
 
 Return ONLY valid JSON, no markdown:
@@ -79,19 +113,36 @@ HARD RULES:
 - Valid Sonic Pi DSL only. No text outside the JSON.
 
 # Sonic Pi Reference
-"""
+""",
+    "strudel": """You are the live-coding engine of a generative radio DJ.
+Create the FIRST set for a new live session, based on the vibe given.
 
-_REF = _load_reference()
-SYSTEM_EVOLVE = _EVOLVE + _REF
-SYSTEM_SEED = _SEED + _REF
-SYSTEM_EVOLVE_LEAN = _EVOLVE  # without the (large) reference
-SYSTEM_SEED_LEAN = _SEED
+Return ONLY valid JSON, no markdown:
+{
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "ruby": "<the complete playable Strudel script>"
+}
+
+HARD RULES:
+- Start with setcpm(<bpm>/4) and keep that tempo for the whole set.
+- Build the set as ONE expression: stack(...) with one pattern per layer
+  (kick, bass, hats, pad, lead, FX).
+- Choose timbres only from the instrument palette.
+- Every musical choice gets a preceding "// why" comment.
+- Valid Strudel only. No $: labels. No text outside the JSON.
+
+# Strudel Reference
+""",
+}
 
 
-def _system(kind, reference=True):
-    if kind == "evolve":
-        return SYSTEM_EVOLVE if reference else SYSTEM_EVOLVE_LEAN
-    return SYSTEM_SEED if reference else SYSTEM_SEED_LEAN
+def _system(kind, lang=DEFAULT_LANG, reference=True):
+    prompts = _EVOLVE if kind == "evolve" else _SEED
+    base = prompts.get(lang, prompts[DEFAULT_LANG])
+    if not reference:
+        return base  # without the (large) reference
+    return base + _load_reference(lang)
 
 
 def load_env_key(env_path):
@@ -178,12 +229,13 @@ def _parse(data, model):
 # -- public calls -----------------------------------------------------------
 
 def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
-                provider="go", base_url=None, reference=True, reasoning="none"):
+                provider="go", base_url=None, reference=True, reasoning="none",
+                lang=DEFAULT_LANG):
     """Generate the first full script for a vibe prompt (one-time call)."""
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system("seed", reference)},
+            {"role": "system", "content": _system("seed", lang, reference)},
             {"role": "user", "content":
                 f'Create the first Sonic Pi script for a live set with this vibe: "{prompt}".'},
         ],
@@ -199,7 +251,7 @@ def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
 def evolve_layer(audio_path, key, model=DEFAULT_MODEL, session_id=None,
                  state_context="", layer="", direction="", layer_code=None,
                  feedback=None, provider="go", base_url=None, reference=True,
-                 reasoning="none"):
+                 reasoning="none", lang=DEFAULT_LANG):
     """Send the state + one layer's code + audio; get a single-layer patch.
 
     Input is bounded: system (cached) + compact state + one layer + audio.
@@ -220,7 +272,7 @@ def evolve_layer(audio_path, key, model=DEFAULT_MODEL, session_id=None,
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system("evolve", reference)},
+            {"role": "system", "content": _system("evolve", lang, reference)},
             {"role": "user", "content": user_content},
         ],
         "max_tokens": 8000,

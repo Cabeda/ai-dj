@@ -32,6 +32,31 @@ SIGNATURE_CHANGE = 3.0
 VARIATION_EVERY = 30
 
 
+def valid_strudel(code):
+    """Cheap structural gate for Strudel before it reaches the host. The host
+    evaluates for real; this only catches obviously broken output."""
+    if not code or not code.strip():
+        return False
+    s = code.strip()
+    if s.count('"') % 2 != 0:
+        return False
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    if stack:
+        return False
+    # reject leaked Sonic Pi code
+    for bad in ("live_loop", "use_bpm", "with_fx"):
+        if bad in s:
+            return False
+    return True
+
+
 def valid_ruby(code):
     """True if `ruby -c` accepts the script. Catches LLM syntax errors
     before they hit Sonic Pi's spider (which only reports them at runtime)."""
@@ -122,6 +147,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         tick=TICK_SECONDS, dry=False, backend=None, provider="go", base_url=None,
         reference=True, feedback_enabled=True, reasoning="none", control=None):
     backend = backend or SonicPiBackend()
+    lang = "strudel" if getattr(backend, "name", "") == "strudel" else "sonic_pi"
+    valid = valid_strudel if lang == "strudel" else valid_ruby
     cap = os.path.join("/tmp", f"ai_dj_cap_{os.getpid()}.wav")
     fb = Feedback(feedback_enabled)
 
@@ -178,7 +205,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
 
     def apply_manual(manual):
         nonlocal script, prev_sig
-        if not valid_ruby(manual):
+        if not valid(manual):
             log("[manual] rejected edit (ruby -c failed)")
             return
         with apply_lock:
@@ -226,16 +253,16 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         try:
             decided = llm.seed_script(prompt, key, model=model, provider=provider,
                                       base_url=base_url, reference=reference,
-                                      reasoning=reasoning)
+                                      reasoning=reasoning, lang=lang)
             if manual_rev[0] != seed_rev:
                 log("[seed] discarded — manual edit applied during generation")
             else:
                 ruby = decided.get("ruby", "")
-                if not valid_ruby(ruby):
+                if not valid(ruby):
                     raise ValueError("seed script failed ruby -c")
                 state.adopt_seed(ruby, decided.get("hearing"))
                 script = state.render()
-                if not valid_ruby(script):
+                if not valid(script):
                     raise ValueError("rendered seed failed ruby -c")
                 name = session.save_script(sess_path, script)
                 backend.play(script)
@@ -273,7 +300,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 try:
                     decided = llm.seed_script(
                         replace_text, key, model=model, provider=provider,
-                        base_url=base_url, reference=reference, reasoning=reasoning)
+                        base_url=base_url, reference=reference, reasoning=reasoning, lang=lang)
                 except Exception as e:
                     log(f"[replace] ERROR: {e}")
                     continue
@@ -281,14 +308,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     log("[replace] discarded — manual edit applied during call")
                     continue
                 ruby = (decided.get("ruby") or "").strip()
-                if not valid_ruby(ruby):
+                if not valid(ruby):
                     log("[replace] invalid Ruby; keeping current set")
                     last_llm = time.time()
                     continue
                 prev = (dict(state.layers), state.bpm, state.key, state.mode, state.mood)
                 state.adopt_seed(ruby, decided.get("hearing"))
                 script = state.render()
-                if not valid_ruby(script):
+                if not valid(script):
                     (state.layers, state.bpm, state.key,
                      state.mode, state.mood) = prev
                     script = state.render()
@@ -348,7 +375,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     layer_code=state.layers.get(plan["layer"]),
                     feedback=feedback or None,
                     provider=provider, base_url=base_url,
-                    reference=reference, reasoning=reasoning)
+                    reference=reference, reasoning=reasoning, lang=lang)
             except Exception as e:
                 log(f"[llm] ERROR: {e} — deterministic fallback")
                 if state.variation():
@@ -366,7 +393,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             # overwrite the last-good layers in state/render.
             ruby = (decided.get("ruby") or "").strip()
             kind = (decided.get("op") or {}).get("kind", "modify")
-            if kind != "remove" and ruby and not valid_ruby(
+            if kind != "remove" and ruby and not valid(
                 f"use_bpm {state.bpm}\n\n{ruby}"
             ):
                 log(f"[llm] seed/evolve returned invalid Ruby; keeping previous script")
@@ -377,7 +404,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             with apply_lock:
                 state.apply_op(decided)
                 script = state.render()
-                if not valid_ruby(script):
+                if not valid(script):
                     state.layers = prev_layers
                     script = state.render()
                     log(f"[llm] rendered script invalid; rolled back")
