@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-dj"
+version = "0.1.0"
+description = "Generative radio DJ: live-codes Sonic Pi from an audio-listening LLM"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[project.scripts]
+ai-dj = "ai_dj.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ai_dj"]

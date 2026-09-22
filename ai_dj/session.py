@@ -16,7 +16,9 @@ import os
 import re
 import time
 
-BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sessions")
+BASE = os.environ.get(
+    "AI_DJ_SESSIONS",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sessions"))
 
 
 def _slug(seed_info):

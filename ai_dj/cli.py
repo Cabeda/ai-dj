@@ -90,9 +90,9 @@ def resolve_llm(a):
     return "go", a.model or llm.DEFAULT_MODEL, None, key
 
 
-def run_live(a, provider, model, base_url, key):
+def make_sonic(a):
     sp = SonicPi()
-    if a.output:
+    if getattr(a, "output", None):
         sp.audio_output = a.output
         print(f"[audio] pinned output device: {sp.audio_output}")
     else:
@@ -100,6 +100,11 @@ def run_live(a, provider, model, base_url, key):
         act = active_output()
         if act:
             print(f"[audio] following system default output: {act['name']} ({act['transport']})")
+    return sp
+
+
+def run_live(a, provider, model, base_url, key):
+    sp = make_sonic(a)
     print(f"[llm] provider={provider} model={model}")
     return run(key, model, a.env, new_seed=getattr(a, "seed", None),
                session_id=getattr(a, "session_id", None),
@@ -107,11 +112,17 @@ def run_live(a, provider, model, base_url, key):
                tick=getattr(a, "tick", 10), dry=getattr(a, "dry", False),
                sonic=sp, provider=provider, base_url=base_url,
                reference=not getattr(a, "no_reference", False),
-               feedback_enabled=not getattr(a, "no_feedback", False))
+               feedback_enabled=not getattr(a, "no_feedback", False),
+               reasoning=getattr(a, "reasoning", "none"))
+
+
+def run_tui(a, provider, model, base_url, key):
+    from . import tui
+    tui.launch(a, provider, model, base_url, key)
 
 
 def cmd_probe(a):
-    from .llm import listen_and_decide
+    from .llm import evolve_layer
     provider, model, base_url, key = resolve_llm(a)
     if a.audio:
         audio = a.audio
@@ -125,12 +136,17 @@ def cmd_probe(a):
         audio = "/tmp/ai_dj_probe_sample.wav"
     print(f"[probe] {provider}:{model} <- {audio}")
     try:
-        decided = listen_and_decide(audio, key, model=model, provider=provider,
-                                    base_url=base_url)
+        decided = evolve_layer(
+            audio, key, model=model, provider=provider, base_url=base_url,
+            state_context="bpm=120 key=a mode=minor energy=0.5 section=build",
+            layer="hats", direction="build", layer_code=None,
+            reference=not getattr(a, "no_reference", False),
+            reasoning=getattr(a, "reasoning", "none"))
     except Exception as e:
         print(f"[probe] ERROR: {e}"); sys.exit(1)
     print("HEARING:", decided.get("hearing"))
     print("DECISION:", decided.get("decision"))
+    print("OP:", decided.get("op"))
     print("RUBY:\n", decided.get("ruby", ""))
 
 
@@ -142,6 +158,9 @@ def _add_llm_flags(p, model_default=None):
                    help="use a local llama.cpp server instead of Zen Go")
     p.add_argument("--local-url", default=None,
                    help=f"llama.cpp base url (default {llm.LOCAL_BASE_DEFAULT})")
+    p.add_argument("--reasoning", default="none",
+                   choices=["none", "low", "medium", "high"],
+                   help="reasoning effort (default none — cheapest)")
     p.add_argument("--no-reference", action="store_true",
                    help="drop the Sonic Pi reference from the prompt (lower context)")
     p.add_argument("--no-feedback", action="store_true",
@@ -168,6 +187,15 @@ def main(argv=None):
     p_pick.add_argument("--output", default=None, help="audio output device (default: follow system default)")
     _add_llm_flags(p_pick)
     p_pick.set_defaults(fn=lambda a: run_live(a, *resolve_llm(a)))
+
+    p_tui = sub.add_parser("tui", help="live TUI: editable script + queued feedback")
+    p_tui.add_argument("--prompt", default=None, help="initial vibe guide")
+    p_tui.add_argument("--seed", type=int, default=None)
+    p_tui.add_argument("--tick", type=int, default=10)
+    p_tui.add_argument("--port", type=int, default=8765, help="control server port")
+    p_tui.add_argument("--output", default=None, help="audio output device (default: follow system default)")
+    _add_llm_flags(p_tui)
+    p_tui.set_defaults(fn=lambda a: run_tui(a, *resolve_llm(a)))
 
     p_list = sub.add_parser("list", help="list saved sessions")
     p_list.set_defaults(fn=cmd_list)

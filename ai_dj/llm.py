@@ -4,9 +4,13 @@
          OPENCODE_API_KEY. mimo-v2.6-flash can hear audio via input_audio parts.
 - "local": a llama.cpp server (default http://127.0.0.1:8080/v1). No key. Audio
          support depends on the loaded model; if the model can't take audio the
-         call falls back to text (current script as context).
+         call falls back to text (the layer's code as context).
 
-Shared by the `probe` prototype and the `live` loop.
+Frugality rules baked in here:
+- The system prompt is byte-identical every call (instructions + reference), so
+  it is fully prompt-cached. Everything variable goes in the user message.
+- The evolve call asks for ONE layer patch, not the whole script, and runs with
+  reasoning_effort="none" by default.
 """
 
 import base64
@@ -31,71 +35,62 @@ def _load_reference():
         return ""
 
 
-_DJ_INSTRUCTIONS = """You are the live-coding engine of a generative radio DJ.
-You hear a short audio sample of the current music and evolve the set.
+_EVOLVE = """You are the live-coding engine of a generative radio DJ.
+You evolve ONE layer of a Sonic Pi live set at a time, smoothly and gradually.
 
-You are given: the CURRENT Sonic Pi script (what is playing), a short AUDIO
-SAMPLE of its output, and optionally USER FEEDBACK from the listener.
+Given: the session state, the layer to change, the direction to take, that
+layer's current code (if any), a 10s audio sample, and optional user feedback.
 
-Your job: return an UPDATED version of the script that evolves the music
-SMOOTHLY. Respond with ONLY valid JSON, no markdown:
-
+Return ONLY valid JSON, no markdown:
 {
-  "hearing": {
-    "tempo_bpm": 0,
-    "key": "",
-    "chords": [],
-    "energy": "",
-    "mood": "",
-    "structure": ""
-  },
-  "decision": {
-    "action": "",
-    "why": "",
-    "change_to": ""
-  },
-  "ruby": ""
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "op": {"kind": "add|modify|remove", "layer": "<the given layer>"},
+  "ruby": "<ONE live_loop for that layer, with # why comments>"
 }
 
 HARD RULES:
-- Smooth transitions. NEVER jump key, tempo or mood. Keep the current key,
-  tempo and feel unless the user feedback explicitly asks otherwise, and then
-  move GRADUALLY (change one element at a time, not the whole piece).
-- Preserve structure. Keep the existing live_loops; change at most 1-2 elements
-  per update (add/remove a layer, adjust a filter, vary a pattern, nudge energy).
-- Return the COMPLETE, runnable script (all live_loops), not a diff.
-- Every musical choice gets a preceding "# why" comment, referencing what you
-  heard or the feedback you acted on.
-- Only Sonic Pi DSL. No explanation outside the JSON.
-
-Use the reference below to pick real synths, samples, FX and patterns — make
-musically deliberate choices, not random ones.
+- Change ONLY the given layer. Never touch other layers.
+- Do NOT set use_bpm; the session tempo is fixed.
+- Keep the session key and mode; stay in the current vibe.
+- This is one incremental step, not a new song.
+- "ruby" must be a single valid Sonic Pi live_loop.
+- Precede each musical choice with a "# why" comment.
+- No text outside the JSON.
 
 # Sonic Pi Reference
 """
 
-_DJ_INSTRUCTIONS_LEAN = """You are the live-coding engine of a generative radio DJ.
-You hear a short audio sample of the current music and evolve the set smoothly.
-Given the CURRENT script, an AUDIO SAMPLE, and optional USER FEEDBACK, return an
-UPDATED runnable script as JSON:
+_SEED = """You are the live-coding engine of a generative radio DJ.
+Create the FIRST script for a new live set, based on the vibe given.
 
-{"hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
- "decision": {"action": "", "why": "", "change_to": ""},
- "ruby": ""}
+Return ONLY valid JSON, no markdown:
+{
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "ruby": "<the complete playable script>"
+}
 
-Rules: keep key/tempo/mood unless feedback says otherwise; change at most 1-2
-elements per update; return the COMPLETE script (all live_loops); precede each
-musical choice with a "# why" comment; valid Sonic Pi DSL only; JSON only.
+HARD RULES:
+- Set one use_bpm at the top and keep it for the whole set.
+- Build one live_loop per element (kick, bass, hats, pad, lead, FX) and sync them.
+- Every musical choice gets a preceding "# why" comment.
+- Valid Sonic Pi DSL only. No text outside the JSON.
+
+# Sonic Pi Reference
 """
 
+_REF = _load_reference()
+SYSTEM_EVOLVE = _EVOLVE + _REF
+SYSTEM_SEED = _SEED + _REF
+SYSTEM_EVOLVE_LEAN = _EVOLVE  # without the (large) reference
+SYSTEM_SEED_LEAN = _SEED
 
-def _system(reference=True):
-    if reference:
-        return _DJ_INSTRUCTIONS + _load_reference()
-    return _DJ_INSTRUCTIONS_LEAN
 
-
-SYSTEM = _system(True)
+def _system(kind, reference=True):
+    if kind == "evolve":
+        return SYSTEM_EVOLVE if reference else SYSTEM_EVOLVE_LEAN
+    return SYSTEM_SEED if reference else SYSTEM_SEED_LEAN
 
 
 def load_env_key(env_path):
@@ -165,85 +160,81 @@ def list_local_models(base_url=None, timeout=10):
     return [m.get("id") for m in data.get("data", []) if m.get("id")]
 
 
-# -- public calls -----------------------------------------------------------
-
 def _parse(data, model):
     choice = data["choices"][0]
     msg = choice["message"]
     content = msg.get("content")
     if not content:
-        reason = choice.get("finish_reason")
-        raise RuntimeError(
-            f"model returned no content (finish={reason}); "
-            f"try raising max_tokens or a smaller reference")
+        raise RuntimeError(f"model returned no content (finish={choice.get('finish_reason')})")
     parsed = _extract_json(content)
     parsed["_usage"] = data.get("usage", {})
     parsed["_model"] = model
     return parsed
 
 
-def listen_and_decide_prompt(prompt, key, model=DEFAULT_MODEL, session_id=None,
-                             provider="go", base_url=None, reference=True):
-    """Generate an initial script from a vibe prompt (no audio input)."""
+# -- public calls -----------------------------------------------------------
+
+def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
+                provider="go", base_url=None, reference=True, reasoning="none"):
+    """Generate the first full script for a vibe prompt (one-time call)."""
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system(reference)},
-            {"role": "user", "content": (
-                f"Create the FIRST Sonic Pi script for a live set with this vibe: "
-                f'"{prompt}". Fill "hearing" with what this vibe implies '
-                f'(tempo, key, energy, mood), "decision" with the starting plan, '
-                f'and put the full playable script in "ruby".')},
+            {"role": "system", "content": _system("seed", reference)},
+            {"role": "user", "content":
+                f'Create the first Sonic Pi script for a live set with this vibe: "{prompt}".'},
         ],
         "max_tokens": 16000,
         "temperature": 0.8,
+        "reasoning_effort": reasoning,
     }
     sid = session_id or f"ai-dj-{os.getpid()}"
     data = _post_chat(provider, base_url, key, body, session_id=sid)
     return _parse(data, model)
 
 
-def listen_and_decide(audio_path, key, model=DEFAULT_MODEL, session_id=None,
-                      prompt=None, provider="go", base_url=None,
-                      current_script=None, feedback=None, reference=True):
-    """Send the current script + audio sample (+ feedback), get the evolution.
+def evolve_layer(audio_path, key, model=DEFAULT_MODEL, session_id=None,
+                 state_context="", layer="", direction="", layer_code=None,
+                 feedback=None, provider="go", base_url=None, reference=True,
+                 reasoning="none"):
+    """Send the state + one layer's code + audio; get a single-layer patch.
 
-    Context is bounded per call: system (cached) + current script + audio +
-    feedback. No chat history is carried, so a session can run for hours.
+    Input is bounded: system (cached) + compact state + one layer + audio.
     """
-    intro = []
-    if current_script:
-        intro.append("Here is the CURRENT Sonic Pi script (what is playing now):\n"
-                     f"```ruby\n{current_script}\n```")
-    intro.append("Here is a 10-second sample of its current output. Evolve the "
-                 "music smoothly.")
+    lines = [f"Session state: {state_context}",
+             f"Change layer: {layer}",
+             f"Direction: {direction}"]
+    if layer_code:
+        lines.append(f"Current code for '{layer}':\n```ruby\n{layer_code}\n```")
+    else:
+        lines.append(f"Current code for '{layer}': none yet — create it.")
     if feedback:
-        intro.append(f"USER FEEDBACK for this iteration (act on it): {feedback}")
-    user_content = [{"type": "text", "text": "\n\n".join(intro)},
-                    _audio_part(audio_path)]
+        lines.append(f"User feedback (act on it): {feedback}")
+    lines.append("Here is a 10s sample of the current output.")
 
-    guide = f'\nSTYLE GUIDE (keep the whole set in this vibe): "{prompt}"' if prompt else ""
+    user_content = [{"type": "text", "text": "\n\n".join(lines)},
+                    _audio_part(audio_path)]
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system(reference) + guide},
+            {"role": "system", "content": _system("evolve", reference)},
             {"role": "user", "content": user_content},
         ],
-        "max_tokens": 16000,
+        "max_tokens": 8000,
         "temperature": 0.8,
+        "reasoning_effort": reasoning,
     }
     sid = session_id or f"ai-dj-{os.getpid()}"
     try:
         data = _post_chat(provider, base_url, key, body, session_id=sid)
         return _parse(data, model)
     except Exception as e:
-        if provider != "local" or current_script is None:
+        if provider != "local" or not layer_code:
             raise
-        # Local model may not accept audio: retry text-only with the script.
         print(f"[llm] local audio failed ({e}); retrying text-only")
         body["messages"][1]["content"] = (
-            f"Your model cannot hear audio. Evolve this CURRENT script musically, "
-            f"smoothly.\n\n```ruby\n{current_script}\n```")
+            f"Your model cannot hear audio. Evolve layer '{layer}' "
+            f"({direction}) of this set.\n\n```ruby\n{layer_code}\n```")
         data = _post_chat(provider, base_url, key, body, session_id=sid)
         return _parse(data, model)
 

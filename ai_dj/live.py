@@ -1,16 +1,16 @@
-"""The ai-dj live loop.
+"""The ai-dj live loop (frugal).
 
-Boots Sonic Pi headless, plays a random starter instantly, then every 10s
-captures the audio that's playing, sends it (plus the current script and any
-user feedback) to the LLM, and live-codes the evolved script back into Sonic Pi.
+Deterministic where possible, model only where necessary:
 
-Context is bounded per call — system prompt (cached) + current script + audio +
-feedback — with no chat history, so a session can run for hours without the
-input growing. Decisions only fire when the previous one finished and the audio
-signature changed enough (adaptive cadence).
+- Python owns tempo, key, mode, energy, the section arc, which layer to change,
+  and a deterministic variation used between calls (see state.DJState).
+- The model is called only at a section boundary, when the audio changed
+  enough, or when the user gives feedback — and it returns ONE layer patch.
+- Context per call is bounded: cached system + compact state + one layer +
+  audio. No chat history, so a session can run for hours.
 
-State lives in memory; the only persistence is the versioned script files in
-the session dir.
+An optional `control` object (ai_dj.control.Control) exposes state, logs,
+feedback and manual script edits to the TUI.
 """
 
 import math
@@ -21,12 +21,14 @@ import threading
 import time
 
 from . import llm, session, sonicpi
-from .templates import random_starter
+from .state import DJState, parse_layers
+from .templates import random_layers
 
 CAPTURE_SECONDS = 10
 TICK_SECONDS = 10
-MIN_LLM_GAP = 20
+MIN_LLM_GAP = 30
 SIGNATURE_CHANGE = 3.0
+VARIATION_EVERY = 30
 
 
 class Feedback:
@@ -35,10 +37,8 @@ class Feedback:
     def __init__(self, enabled=True):
         self._lock = threading.Lock()
         self._items = []
-        self._thread = None
         if enabled and sys.stdin and sys.stdin.isatty():
-            self._thread = threading.Thread(target=self._read_loop, daemon=True)
-            self._thread.start()
+            threading.Thread(target=self._read_loop, daemon=True).start()
 
     def _read_loop(self):
         for line in sys.stdin:
@@ -54,12 +54,9 @@ class Feedback:
 
 
 def _signature(path):
-    """Cheap audio fingerprint: RMS chunks."""
     with open(path, "rb") as f:
         data = f.read()
-    if len(data) < 44:
-        return None
-    if struct.unpack("<4s", data[8:12])[0] != b"WAVE":
+    if len(data) < 44 or struct.unpack("<4s", data[8:12])[0] != b"WAVE":
         return None
     channels = struct.unpack("<H", data[22:24])[0]
     bits = struct.unpack("<H", data[34:36])[0]
@@ -68,14 +65,14 @@ def _signature(path):
     frame_bytes = channels * (bits // 8)
     pcm = data[44:]
     n = len(pcm) // frame_bytes
-    sig = []
     step = max(1, n // 16)
     scale = 1.0 / (1 << (bits - 1))
+    sig = []
     for i in range(0, n, step):
         chunk = pcm[i * frame_bytes:(i + 1) * frame_bytes]
-        if not chunk:
-            continue
         nf = len(chunk) // frame_bytes
+        if not nf:
+            continue
         total = 0.0
         for j in range(nf):
             raw = chunk[j * frame_bytes:(j + 1) * frame_bytes]
@@ -94,130 +91,162 @@ def _diff(a, b):
     return sum(abs(x - y) for x, y in zip(a, b))
 
 
-def _render(decided, model, feedback=None):
-    h = decided.get("hearing", {})
-    d = decided.get("decision", {})
-    header = (
-        "# ai-dj live - generated script\n"
-        f"# model: {model}\n"
-        f"# HEARD: {h.get('tempo_bpm', '?')} bpm, {h.get('key', '?')}, chords={h.get('chords', '?')}, "
-        f"energy={h.get('energy', '?')}, mood={h.get('mood', '?')}\n"
-        f"# DECIDED: {d.get('action', '?')} -> {d.get('change_to', '?')}\n"
-        f"# WHY: {d.get('why', '?')}\n"
-        + (f"# FEEDBACK: {feedback}\n" if feedback else "")
-        + "\n")
-    return header + (decided.get("ruby") or "").strip()
-
-
-def vibe_starter(prompt, key, model, provider="go", base_url=None,
-                 reference=True, seed=None):
-    """Generate an initial script for a vibe prompt. Falls back to a random
-    starter so music always plays."""
-    try:
-        decided = llm.listen_and_decide_prompt(prompt, key, model=model,
-                                               provider=provider, base_url=base_url,
-                                               reference=reference)
-        script = _render(decided, model)
-        script = f"# ai-dj vibe starter (guide: {prompt})\n" + script.split("\n", 1)[-1]
-        return script, {"seed": seed, "prompt": prompt, "model": model}
-    except Exception as e:
-        print(f"[vibe] LLM starter failed ({e}); falling back to random")
-        return random_starter(seed=seed)
-
-
 def run(key, model, env, new_seed=None, session_id=None, prompt=None,
-        tick=10, dry=False, sonic=None, provider="go", base_url=None,
-        reference=True, feedback_enabled=True):
+        tick=TICK_SECONDS, dry=False, sonic=None, provider="go", base_url=None,
+        reference=True, feedback_enabled=True, reasoning="none", control=None):
     sp = sonic or sonicpi.SonicPi()
     cap = os.path.join("/tmp", f"ai_dj_cap_{os.getpid()}.wav")
     fb = Feedback(feedback_enabled)
 
+    def log(line):
+        print(line)
+        if control:
+            control.log(line)
+
+    def sync_state(script):
+        if control:
+            control.set_state(running=True, provider=provider, model=model,
+                              bpm=state.bpm, key=state.key, mode=state.mode,
+                              energy=round(state.energy, 2), section=state.section,
+                              layers=list(state.layers), last_action=state.last_action,
+                              script=script)
+
     if session_id:
         ver, script = session.load_latest(session_id)
-        sess_path = session_dir_of(session_id)
-        print(f"[session] resumed {session_id} at {ver}")
+        state = DJState.from_script(script, model=model)
+        sess_path = os.path.join(session.BASE, session_id)
+        log(f"[session] resumed {session_id} at {ver} "
+            f"({len(state.layers)} layers, {state.bpm}bpm)")
     else:
-        script, seed_info = random_starter(seed=new_seed)
-        sess_path = session.create_session(seed_info)
-        print(f"[session] new session: {os.path.basename(sess_path)}"
-              + (f" | guide: {prompt}" if prompt else ""))
-        session.save_script(sess_path, script)
+        layers, info = random_layers(seed=new_seed)
+        state = DJState(bpm=info["bpm"], key=info["key"], mode=info["scale"],
+                        layers=layers, model=model)
+        sess_path = session.create_session(info)
+        log(f"[session] new session: {os.path.basename(sess_path)}"
+            + (f" | guide: {prompt}" if prompt else ""))
 
     if dry:
-        print("[dry] skipping Sonic Pi + audio")
+        log("[dry] skipping Sonic Pi + audio")
         return sess_path
 
     sp.boot()
     sp.set_volume(1.0)
+    script = state.render()
+    session.save_script(sess_path, script)
     sp.run_code(script)
-    print("[play] random starter running (instant)")
+    log("[play] starter running (instant)")
+    sync_state(script)
 
     if prompt:
-        print(f"[vibe] generating starter for '{prompt}'...")
-        vibe_script, _ = vibe_starter(prompt, key, model, provider=provider,
+        log(f"[seed] generating first script for '{prompt}'...")
+        try:
+            decided = llm.seed_script(prompt, key, model=model, provider=provider,
                                       base_url=base_url, reference=reference,
-                                      seed=new_seed)
-        name = session.save_script(sess_path, vibe_script)
-        sp.run_code(vibe_script)
-        script = vibe_script
-        print(f"[vibe] applied {name}")
+                                      reasoning=reasoning)
+            state.adopt_seed(decided.get("ruby", ""), decided.get("hearing"))
+            script = state.render()
+            name = session.save_script(sess_path, script)
+            sp.run_code(script)
+            log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
+            sync_state(script)
+        except Exception as e:
+            log(f"[seed] failed ({e}); keeping random starter")
 
     if feedback_enabled and sys.stdin and sys.stdin.isatty():
-        print("[feedback] type feedback + Enter anytime (e.g. 'more bass'); "
-              "it applies on the next update")
+        log("[feedback] type feedback + Enter anytime (e.g. 'more bass')")
 
     prev_sig = None
     last_llm = 0.0
+    last_var = time.time()
     ticks = 0
     try:
         while True:
             time.sleep(tick)
             ticks += 1
+
+            # manual edit from the TUI takes precedence
+            manual = control.drain_manual_script() if control else None
+            if manual:
+                layers = parse_layers(manual)
+                if layers:
+                    state.layers = layers
+                    state.last_action = "manual edit"
+                script = state.render() if not layers else manual
+                session.save_script(sess_path, script)
+                sp.run_code(script)
+                log(f"[manual] applied user edit ({len(state.layers)} layers)")
+                sync_state(script)
+                prev_sig = None
+
             capfile = sp.capture(cap, CAPTURE_SECONDS)
             if not capfile:
-                print(f"[tick {ticks}] capture failed, skipping")
+                log(f"[tick {ticks}] capture failed, skipping")
                 continue
             sig = _signature(capfile)
-            changed = _diff(prev_sig, sig) if prev_sig is not None else True
+            changed = _diff(prev_sig, sig) if prev_sig is not None else 0.0
             prev_sig = sig
 
             feedback = fb.drain()
-            since_llm = time.time() - last_llm
-            if not feedback and (not changed or since_llm < MIN_LLM_GAP):
-                print(f"[tick {ticks}] no significant change (diff={changed:.1f}, "
-                      f"last_llm={since_llm:.0f}s ago) — keeping current script")
+            if not feedback and control:
+                feedback = control.drain_feedback()
+
+            boundary = state.section_elapsed() >= state.section_seconds()
+            if boundary:
+                state.advance_section()
+                log(f"[section] -> {state.section} (target energy {state.target_energy()})")
+                sync_state(script)
+
+            due = feedback or boundary or (
+                changed > SIGNATURE_CHANGE and (time.time() - last_llm) >= MIN_LLM_GAP)
+
+            if not due:
+                if (time.time() - last_var) >= VARIATION_EVERY and state.variation():
+                    last_var = time.time()
+                    script = state.render()
+                    sp.run_code(script)
+                    log(f"[tick {ticks}] deterministic variation (no model call)")
+                    sync_state(script)
+                else:
+                    log(f"[tick {ticks}] hold (diff={changed:.1f})")
                 continue
 
-            print(f"[tick {ticks}] updating"
-                  + (f" (feedback: {feedback})" if feedback else "")
-                  + f"; sending sample to {model}...")
+            plan = state.plan_next()
+            log(f"[tick {ticks}] {plan['direction']} layer '{plan['layer']}'"
+                + (f" | feedback: {feedback}" if feedback else "")
+                + f" | sending sample to {model}...")
             try:
-                decided = llm.listen_and_decide(
+                decided = llm.evolve_layer(
                     capfile, key, model=model,
-                    session_id=os.path.basename(sess_path), prompt=prompt,
+                    session_id=os.path.basename(sess_path),
+                    state_context=state.to_context(),
+                    layer=plan["layer"], direction=plan["direction"],
+                    layer_code=state.layers.get(plan["layer"]),
+                    feedback=feedback or None,
                     provider=provider, base_url=base_url,
-                    current_script=script, feedback=feedback or None,
-                    reference=reference)
-                usage = decided.get("_usage", {})
-                print(f"[llm] heard: {decided['hearing'].get('tempo_bpm')}bpm "
-                      f"{decided['hearing'].get('key')} {decided['hearing'].get('mood')} | "
-                      f"tokens_in={usage.get('prompt_tokens')} "
-                      f"audio={usage.get('prompt_tokens_details', {}).get('audio_tokens')}")
+                    reference=reference, reasoning=reasoning)
             except Exception as e:
-                print(f"[llm] ERROR: {e} — keeping current script")
+                log(f"[llm] ERROR: {e} — deterministic fallback")
+                if state.variation():
+                    script = state.render()
+                    sp.run_code(script)
+                    sync_state(script)
                 continue
 
-            new_script = _render(decided, model, feedback or None)
-            name = session.save_script(sess_path, new_script)
-            print(f"[live-code] applied {name}: {decided['decision'].get('action', '')[:80]}")
-            sp.run_code(new_script)
-            script = new_script
+            state.apply_op(decided)
+            script = state.render()
+            name = session.save_script(sess_path, script)
+            sp.run_code(script)
             last_llm = time.time()
+            u = decided.get("_usage", {})
+            log(f"[live-code] {name}: {decided.get('decision', {}).get('action', '')[:80]}")
+            log(f"[cost] in={u.get('prompt_tokens')} "
+                f"cached={u.get('prompt_tokens_details', {}).get('cached_tokens')} "
+                f"out={u.get('completion_tokens')} "
+                f"reasoning={u.get('completion_tokens_details', {}).get('reasoning_tokens')}")
+            sync_state(script)
     except KeyboardInterrupt:
-        print("\n[bye] stopping")
+        log("\n[bye] stopping")
     finally:
+        if control:
+            control.set_state(running=False)
         sp.shutdown()
-
-
-def session_dir_of(session_id):
-    return os.path.join(session.BASE, session_id)

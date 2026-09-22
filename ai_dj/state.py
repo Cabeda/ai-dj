@@ -1,0 +1,228 @@
+"""Deterministic DJ state.
+
+Everything that does not need a model lives here: tempo, key, mode, energy,
+the section plan, which layer to change next, and a deterministic variation
+used between model calls. The LLM only ever produces one small layer patch.
+
+State is the single source of truth for the live set. It renders the full
+Sonic Pi script on demand and can parse a saved script back into layers so a
+session can be resumed.
+"""
+
+import random
+import re
+import time
+
+# (name, seconds, target_energy) — a deterministic energy arc that loops.
+SECTIONS = [
+    ("intro", 60, 0.30),
+    ("build", 75, 0.55),
+    ("peak", 90, 0.85),
+    ("breakdown", 45, 0.25),
+    ("peak", 90, 0.90),
+    ("outro", 45, 0.35),
+]
+
+# Layer priorities for deterministic decisions.
+BUILD_ORDER = ["hats", "perc", "bass", "pad", "arp", "lead", "fx", "sub", "drone"]
+REDUCE_ORDER = ["lead", "arp", "fx", "perc", "hats", "drone", "sub", "pad", "bass"]
+CORE_LAYERS = {"kick", "bass"}
+
+
+def parse_layers(script):
+    """Split a rendered script into {layer_name: live_loop_code}.
+
+    Assumes top-level live_loop blocks (which render() guarantees).
+    """
+    matches = list(re.finditer(r"(?m)^live_loop\s+:(\w+)\s+do", script))
+    layers = {}
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(script)
+        layers[m.group(1)] = script[start:end].strip()
+    return layers
+
+
+def parse_header(script):
+    """Read the '# state ...' comment line back into a dict."""
+    m = re.search(r"(?m)^#\s*state\s+(.+)$", script)
+    if not m:
+        return {}
+    out = {}
+    for tok in m.group(1).split():
+        if "=" in tok:
+            k, v = tok.split("=", 1)
+            out[k] = v
+    return out
+
+
+class DJState:
+    def __init__(self, bpm, key, mode, layers, energy=0.35, mood="",
+                 section_index=0, model=""):
+        self.bpm = int(bpm)
+        self.key = key
+        self.mode = mode
+        self.layers = dict(layers)
+        self.energy = float(energy)
+        self.mood = mood
+        self.section_index = section_index % len(SECTIONS)
+        self.section_started = time.time()
+        self.model = model
+        self.last_action = ""
+        self.last_layer = None
+        self.history = []
+        self.rng = random.Random(bpm * 1000 + len(layers))
+
+    # -- section / energy ---------------------------------------------------
+    @property
+    def section(self):
+        return SECTIONS[self.section_index][0]
+
+    def target_energy(self):
+        return SECTIONS[self.section_index][2]
+
+    def section_seconds(self):
+        return SECTIONS[self.section_index][1]
+
+    def section_elapsed(self):
+        return time.time() - self.section_started
+
+    def advance_section(self):
+        self.section_index = (self.section_index + 1) % len(SECTIONS)
+        self.section_started = time.time()
+
+    # -- deterministic planning --------------------------------------------
+    def _pick_existing(self, exclude_last=True):
+        names = [n for n in self.layers if not (exclude_last and n == self.last_layer)]
+        if not names:
+            names = list(self.layers)
+        return self.rng.choice(names) if names else None
+
+    def plan_next(self):
+        """Deterministically choose the layer and direction for the next step."""
+        target = self.target_energy()
+        delta = target - self.energy
+        if delta > 0.08:
+            direction = "build"
+            layer = next((l for l in BUILD_ORDER if l not in self.layers), None)
+            if layer is None:
+                direction = "intensify"
+                layer = self._pick_existing()
+        elif delta < -0.08:
+            direction = "reduce"
+            layer = next((l for l in REDUCE_ORDER
+                          if l in self.layers and l not in CORE_LAYERS), None)
+            if layer is None:
+                direction = "vary"
+                layer = self._pick_existing()
+        else:
+            direction = "vary"
+            layer = self._pick_existing()
+        return {
+            "direction": direction,
+            "layer": layer,
+            "energy_now": round(self.energy, 2),
+            "target_energy": round(target, 2),
+            "section": self.section,
+        }
+
+    # -- applying a model patch --------------------------------------------
+    def apply_op(self, decided):
+        op = decided.get("op") or {}
+        kind = op.get("kind", "modify")
+        layer = op.get("layer") or self.last_layer
+        ruby = (decided.get("ruby") or "").strip()
+        if kind == "remove" and layer:
+            self.layers.pop(layer, None)
+        elif layer and ruby:
+            self.layers[layer] = ruby
+        self.last_layer = layer
+        action = (decided.get("decision") or {}).get("action", "")
+        self.last_action = action
+        self.history.append(action)
+        self.history = self.history[-5:]
+        self.mood = (decided.get("hearing") or {}).get("mood", self.mood)
+        # step energy toward the section target
+        if kind == "remove":
+            self.energy = max(0.0, self.energy - 0.15)
+        else:
+            self.energy += 0.2 * (self.target_energy() - self.energy)
+        self.energy = max(0.0, min(1.0, self.energy))
+
+    # -- deterministic variation (no model) --------------------------------
+    def variation(self):
+        """Nudge one layer's numeric params. Safe no-op if nothing matches."""
+        layer = self._pick_existing()
+        if not layer:
+            return False
+        code = self.layers[layer]
+
+        def bump(m):
+            val = float(m.group(2))
+            factor = self.rng.choice([0.9, 0.95, 1.05, 1.1])
+            return f"{m.group(1)}{round(val * factor, 3)}"
+
+        new = re.sub(r"(\bamp:\s*)([0-9.]+)", bump, code, count=1)
+        if new == code:
+            new = re.sub(r"(\bcutoff:\s*)([0-9.]+)", bump, code, count=1)
+        if new == code:
+            new = re.sub(r"(\brelease:\s*)([0-9.]+)", bump, code, count=1)
+        if new != code:
+            self.layers[layer] = new
+            self.last_layer = layer
+            return True
+        return False
+
+    # -- context + render ---------------------------------------------------
+    def to_context(self):
+        return (
+            f"bpm={self.bpm} key={self.key} mode={self.mode} "
+            f"energy={self.energy:.2f} section={self.section}\n"
+            f"active layers: {', '.join(self.layers) or 'none'}\n"
+            f"last action: {self.last_action or 'none'}")
+
+    def render(self):
+        header = (
+            "# ai-dj live - generated script\n"
+            f"# model: {self.model}\n"
+            f"# state bpm={self.bpm} key={self.key} mode={self.mode} "
+            f"energy={self.energy:.2f} section={self.section}\n"
+            f"# last: {self.last_action}\n"
+            "\n")
+        body = f"use_bpm {self.bpm}\n\n" + "\n\n".join(self.layers.values())
+        return header + body
+
+    @classmethod
+    def from_script(cls, script, model=""):
+        layers = parse_layers(script)
+        h = parse_header(script)
+        return cls(
+            bpm=int(h.get("bpm", 120)),
+            key=h.get("key", "a"),
+            mode=h.get("mode", "minor"),
+            layers=layers,
+            energy=float(h.get("energy", 0.35)),
+            model=model,
+        )
+
+    def adopt_seed(self, ruby, hearing=None):
+        """Replace layers with those parsed from a seed script, and adopt its
+        tempo/key/mode so the rest of the session stays consistent."""
+        layers = parse_layers(ruby or "")
+        if layers:
+            self.layers = layers
+        m = re.search(r"use_bpm\s+(\d+)", ruby or "")
+        if m:
+            self.bpm = int(m.group(1))
+        if hearing:
+            k = (hearing.get("key") or "")
+            root = re.search(r"\b([a-gA-G])", k)
+            if root:
+                self.key = root.group(1).lower()
+            low = k.lower()
+            if "minor" in low:
+                self.mode = "minor"
+            elif "major" in low:
+                self.mode = "major"
+            self.mood = hearing.get("mood", self.mood)
+        self.last_action = "seed"

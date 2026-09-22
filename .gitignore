@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 
+# node / tui
+node_modules/
+
 # runtime data: generated sessions and captured audio
 sessions/
 *.wav
@@ -19,3 +22,7 @@ tools/audiodev.dSYM/
 .env
 env
 *.env
+
+# agent skills (live in the agent config, not the project)
+.agents/
+skills-lock.json

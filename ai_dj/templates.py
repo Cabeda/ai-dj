@@ -131,6 +131,37 @@ end""",
 
 TEMPLATE_NAMES = sorted(_BODIES)
 
+TEMPLATE_LAYER = {
+    "ambient_pad": "pad",
+    "techno_kick": "kick",
+    "acid_bass": "bass",
+    "bells": "lead",
+    "hats": "hats",
+    "bass_pulse": "sub",
+    "arp": "arp",
+    "drone": "drone",
+    "noise_sweep": "fx",
+}
+
+
+def random_layers(seed=None):
+    """Return ({layer_name: live_loop_code}, info) — the deterministic starter
+    used to build a DJState."""
+    rng = random.Random(seed)
+    bpm = _rand_bpm()
+    key = _rand_key()
+    scale = _rand_scale()
+    synth = _rand_synth()
+    names = rng.sample(TEMPLATE_NAMES, rng.randint(2, 4))
+    layers = {}
+    for t in names:
+        layers[TEMPLATE_LAYER[t]] = _BODIES[t].format(
+            bpm=bpm, key=key, scale=scale, synth=synth,
+            scale_notes=str(_scale_notes(key, scale)), seed=seed)
+    info = {"seed": seed, "bpm": bpm, "key": key, "scale": scale,
+            "synth": synth, "templates": names}
+    return layers, info
+
 
 def random_starter(seed=None):
     rng = random.Random(seed)
