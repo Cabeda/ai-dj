@@ -1,7 +1,6 @@
 // ai-dj TUI — shows the live Sonic Pi script (editable), queues feedback.
 import {
   BoxRenderable,
-  ScrollBoxRenderable,
   TextRenderable,
   TextareaRenderable,
   createCliRenderer,
@@ -37,27 +36,20 @@ const scriptArea = new TextareaRenderable(renderer, {
   },
 })
 
+// Sized to the panel (not full content height) so TextBuffer's own viewport
+// clips lines at the source — native drawTextBuffer does not reliably honor
+// ScrollBox scissor rects, which let log lines bleed over the feedback box.
 const logView = new TextRenderable(renderer, {
   id: "log",
   content: "",
   fg: "#7f8b99",
   bg: "#0d0f12",
   width: "100%",
-  wrapMode: "word",
-})
-
-const logScroll = new ScrollBoxRenderable(renderer, {
-  id: "logscroll",
   flexGrow: 1,
   flexBasis: 0,
   minWidth: 0,
-  width: "100%",
-  scrollY: true,
-  stickyScroll: true,
-  stickyStart: "bottom",
-  overflow: "hidden",
+  wrapMode: "word",
 })
-logScroll.add(logView)
 
 const feedback = new TextareaRenderable(renderer, {
   id: "feedback",
@@ -131,7 +123,7 @@ const logPanel = new BoxRenderable(renderer, {
   flexDirection: "column",
   overflow: "hidden",
 })
-logPanel.add(logScroll)
+logPanel.add(logView)
 
 const middle = new BoxRenderable(renderer, {
   id: "middle",
@@ -165,6 +157,19 @@ let animating = false
 let animTimer: ReturnType<typeof setInterval> | null = null
 let animTarget = ""
 let animPos = 0
+let stickBottom = true
+
+function setLog(text: string) {
+  if (logView.height > 1 && logView.scrollY < logView.maxScrollY - 1) {
+    stickBottom = false
+  } else {
+    stickBottom = true
+  }
+  logView.content = text
+  if (stickBottom) {
+    logView.scrollY = logView.maxScrollY
+  }
+}
 
 const ANIM_MS = 14
 const ANIM_CHUNK = 4
@@ -261,7 +266,7 @@ async function poll() {
     const log = (s.log ?? []).slice(-80).join("\n")
     if (log !== lastLog) {
       lastLog = log
-      logView.content = log
+      setLog(log)
     }
     if (!dirty && typeof s.script === "string" && s.script && s.script !== scriptArea.plainText) {
       animateScript(s.script)
