@@ -83,10 +83,12 @@ def chroma_histogram(notes):
 
 
 def interval_histogram(notes):
-    """Distribution of melodic intervals, folded into 12 bins."""
-    hist = [0.0] * 12
+    """Distribution of melodic intervals. Bin 0 is a repeat, bins 1-11 are
+    interval classes, bin 12 an octave or wider."""
+    hist = [0.0] * 13
     for a, b in zip(notes, notes[1:]):
-        hist[abs(b - a) % 12] += 1.0
+        step = abs(b - a)
+        hist[step if step <= 12 else 12] += 1.0
     total = sum(hist)
     return [h / total for h in hist] if total else hist
 
@@ -99,7 +101,7 @@ def cosine(a, b):
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0 or nb == 0:
         return 0.0
-    return dot / (na * nb)
+    return max(0.0, min(1.0, dot / (na * nb)))
 
 
 def similarity(a_notes, b_notes):

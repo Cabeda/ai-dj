@@ -228,7 +228,7 @@ class StdioBackend(SoundBackend):
     def capture(self, path: str, seconds: float):
         self._send({"op": "capture", "path": path, "seconds": float(seconds)})
         try:
-            event = self._wait("captured", seconds + 20)
+            event = self._wait("captured", seconds + 25)
         except RuntimeError as e:
             # host reported a render failure — treat as no capture
             self.log(f"[stdio] capture failed: {e}")

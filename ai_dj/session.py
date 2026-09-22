@@ -31,13 +31,15 @@ _EXT = {"sonic_pi": "rb", "strudel": "mjs"}
 
 
 def _slug(seed_info):
-    seed = seed_info.get("seed") or ""
+    # seed may be model text; keep it to a safe filename fragment
+    seed = re.sub(r"[^A-Za-z0-9_-]+", "-", str(seed_info.get("seed") or ""))[:24]
     bpm = seed_info.get("bpm")
     return f"{int(time.time())}-{seed}-b{bpm}"
 
 
 def _version_of(name):
-    m = re.match(r"(\d{4})\.(?:rb|mjs)$", name)
+    # any number of digits: a day-long run can exceed 9999 versions
+    m = re.match(r"(\d+)\.(?:rb|mjs)$", name)
     return int(m.group(1)) if m else 0
 
 
@@ -61,17 +63,22 @@ def _next_version(session_path):
 def _prune(session_path, keep=None):
     # read KEEP_VERSIONS at call time, not as a default argument
     keep = KEEP_VERSIONS if keep is None else keep
-    files = sorted(
-        (f for f in os.listdir(session_path) if _version_of(f)),
-        key=_version_of,
-    )
-    if len(files) <= keep:
-        return
-    for old in files[:-keep]:
-        try:
-            os.unlink(os.path.join(session_path, old))
-        except OSError:
-            pass
+    # prune per extension: last.<ext> always points at the newest file of that
+    # extension, so pruning the oldest of each extension can never delete the
+    # file a symlink still targets
+    for ext in _EXT.values():
+        files = sorted(
+            (f for f in os.listdir(session_path)
+             if _version_of(f) and f.endswith("." + ext)),
+            key=_version_of,
+        )
+        if len(files) <= keep:
+            continue
+        for old in files[:-keep]:
+            try:
+                os.unlink(os.path.join(session_path, old))
+            except OSError:
+                pass
 
 
 def save_script(session_path, script, lang="sonic_pi"):
@@ -81,7 +88,7 @@ def save_script(session_path, script, lang="sonic_pi"):
     with open(os.path.join(session_path, name), "w") as f:
         f.write(script)
     last = os.path.join(session_path, f"last.{ext}")
-    if os.path.islink(last):
+    if os.path.lexists(last):
         os.unlink(last)
     os.symlink(name, last)
     _prune(session_path)
@@ -99,7 +106,7 @@ def list_sessions():
         latest = None
         for ext in ("rb", "mjs"):
             last = os.path.join(p, f"last.{ext}")
-            if os.path.islink(last):
+            if os.path.islink(last) and os.path.exists(last):
                 latest = os.readlink(last)
                 break
         out.append({"id": d, "path": p, "latest": latest})
@@ -110,7 +117,7 @@ def load_latest(session_id):
     d = os.path.join(BASE, session_id)
     for ext in ("rb", "mjs"):
         p = os.path.join(d, f"last.{ext}")
-        if os.path.islink(p):
+        if os.path.islink(p) and os.path.exists(p):
             target = os.path.join(d, os.readlink(p))
             with open(target) as f:
                 return os.readlink(p), f.read()

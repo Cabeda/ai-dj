@@ -56,7 +56,7 @@ _LAYER_BODIES = {
     "pizz":     'note("[{root}2,{fifth}2]").s("gm_pizzicato_strings").gain(0.3)',
     "harp":     'n("0 4 2 5 3 7").scale("{key}:{mode}").s("harp")'
                 '.gain(0.45).slow(2)',
-    "piano":    'chord("<{key^}m7 {key^}m7 {key^}M7 {key^}m7>").voicing()'
+    "piano":    'chord("<{key^}{q7} {key^}{q7} {key^}M7 {key^}{q7}>").voicing()'
                 '.s("piano").gain(0.3).slow(4)',
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
                 '.attack(0.1).release(1).gain(0.25)',
@@ -70,7 +70,7 @@ _EXTRA = {
                 '.attack(2).release(4).lpf(perlin.range(400,1600).slow(16))'
                 '.gain(0.18).slow(8)',
     "sub":      'note("{root}1").s("sine").gain(0.5).slow(2)',
-    "rhodes":   'chord("<{key^}m9 {key^}m9 {key^}m7 {key^}m9>").voicing()'
+    "rhodes":   'chord("<{key^}{q9} {key^}{q9} {key^}{q7} {key^}{q9}>").voicing()'
                 '.s("gm_clavinet").gain(0.25).room(0.4).slow(4)',
     "vibes":    'n("0 4 2 5 7 4").scale("{key}:{mode}").s("vibraphone")'
                 '.gain(0.35).room(0.3).slow(2)',
@@ -113,9 +113,19 @@ def _triad(key, mode):
     return {"root": names[0], "third": names[1], "fifth": names[2]}
 
 
+# Seventh-chord quality per mode: major modes get major sevenths, minor modes
+# get minor sevenths. Without this a "major" archetype sounds minor and clashes
+# with its own scale layers.
+_MAJOR_MODES = {"major", "mixolydian", "lydian"}
+
+
 def _fill(body, key, mode):
     triad = _triad(key, mode)
+    q7 = "M7" if mode in _MAJOR_MODES else "m7"
+    q9 = "M9" if mode in _MAJOR_MODES else "m9"
     return (body
+            .replace("{q7}", q7)
+            .replace("{q9}", q9)
             .replace("{key^}", key.upper())
             .replace("{key}", key)
             .replace("{mode}", mode)

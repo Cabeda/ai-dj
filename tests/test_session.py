@@ -56,9 +56,42 @@ class SessionStorageTests(unittest.TestCase):
         ver, text = session.load_latest(os.path.basename(self.path))
         self.assertEqual(text, "script 12")
 
-    def test_pruning_never_removes_the_symlink(self):
-        session.save_script(self.path, "x")
-        self.assertTrue(os.path.islink(os.path.join(self.path, "last.rb")))
+    def test_pruning_never_orphans_a_symlink(self):
+        # alternate languages while exceeding the cap: the file last.<ext>
+        # points at must survive, or load_latest raises
+        original = session.KEEP_VERSIONS
+        session.KEEP_VERSIONS = 3
+        try:
+            for i in range(8):
+                lang = "sonic_pi" if i % 2 == 0 else "strudel"
+                session.save_script(self.path, f"v{i}", lang=lang)
+            for ext in ("rb", "mjs"):
+                last = os.path.join(self.path, f"last.{ext}")
+                if os.path.islink(last):
+                    self.assertTrue(
+                        os.path.exists(last),
+                        f"last.{ext} is dangling after pruning",
+                    )
+            # and both extensions remain loadable
+            ver, text = session.load_latest(os.path.basename(self.path))
+            self.assertTrue(text.startswith("v"))
+        finally:
+            session.KEEP_VERSIONS = original
+
+    def test_versions_beyond_9999_still_increment(self):
+        # a day-long run can pass 9999 versions; the counter must not reset
+        session.save_script(self.path, "a")
+        os.unlink(os.path.join(self.path, "0001.rb"))
+        os.unlink(os.path.join(self.path, "last.rb"))
+        with open(os.path.join(self.path, "10000.rb"), "w") as f:
+            f.write("big")
+        os.symlink("10000.rb", os.path.join(self.path, "last.rb"))
+        self.assertEqual(session._next_version(self.path), 10001)
+
+    def test_slug_is_safe_for_model_text(self):
+        path = session.create_session({"seed": "../../etc/passwd", "bpm": 90})
+        self.assertNotIn("..", os.path.basename(path))
+        self.assertNotIn("/", os.path.basename(path))
 
     def test_list_sessions_reports_latest(self):
         session.save_script(self.path, "one")

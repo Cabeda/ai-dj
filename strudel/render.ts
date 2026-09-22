@@ -178,20 +178,6 @@ async function render(req: any) {
     .queryArc(0, seconds * cps, { _cps: cps })
     .sort((a: any, b: any) => a.whole.begin.valueOf() - b.whole.begin.valueOf())
 
-  // Fetch + decode every sample the window needs, before scheduling. Decoding
-  // is async and the sampler discards a node whose fetch outran its start time.
-  const needed = new Set<string>()
-  for (const hap of haps) {
-    if (!hap.hasOnset() || !hap.value?.s) continue
-    const v = hap.value
-    const key = `${v.s}:${v.n ?? 0}:${v.bank ?? ""}`
-    if (needed.has(key)) continue
-    needed.add(key)
-    try {
-      await sd.getSampleBufferSource(v, v.bank, undefined)
-    } catch {}
-  }
-
   for (const hap of haps) {
     if (!hap.hasOnset()) continue
     try {
@@ -210,8 +196,12 @@ async function render(req: any) {
   const buffer = await oc.startRendering()
   const left = buffer.getChannelData(0)
   const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left
+  // peak across every channel: a hard-panned render is not silence
   let peak = 0
-  for (let i = 0; i < left.length; i++) peak = Math.max(peak, Math.abs(left[i]))
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch)
+    for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]))
+  }
   if (peak < 0.0001) return { ok: false, error: "rendered silence" }
   await Bun.write(out, encodeWav(left, right, buffer.sampleRate))
   return { ok: true, path: out, peak }

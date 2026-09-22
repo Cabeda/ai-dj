@@ -26,23 +26,30 @@ class ArchetypeTests(unittest.TestCase):
     def test_strudel_instruments_are_in_the_palette(self):
         import re
 
+        from ai_dj.palette import STRUDEL, all_instruments
+
+        known = {ins.realisations[STRUDEL] for ins in all_instruments() if STRUDEL in ins.realisations}
+        # built-in oscillators/noise are not palette entries
+        builtin = {"sawtooth", "sine", "triangle", "square", "supersaw", "saw",
+                   "white", "pink", "brown"}
+        unknown = []
         for name in st.ARCHETYPE_NAMES:
             layers, _ = st.build(name, seed=3)
             for layer, code in layers.items():
-                ids = re.findall(r'\.s\("([^"]+)"\)', code)
-                if not ids and "s(" in code:
-                    ids = re.findall(r's\("([^"]+)"\)', code)
-                for sid in ids:
-                    # built-in synth/sample names are not palette entries
-                    if sid.startswith("gm_"):
-                        self.assertTrue(
-                            any(
-                                is_supported(canonical, STRUDEL)
-                                and canonical == _canonical_for(STRUDEL, sid)
-                                for canonical in _canonicals()
-                            ),
-                            f"{sid} not in palette",
-                        )
+                for expr in re.findall(r's\("([^"]+)"\)', code):
+                    # mini-notation: strip repeats (*n), indices (:n) and lists
+                    for token in re.split(r"[,\s]+", expr):
+                        base = token.split("*")[0].split(":")[0].strip()
+                        if base and base not in known and base not in builtin:
+                            unknown.append(f"{name}/{layer}: {base}")
+        self.assertEqual(unknown, [], f"instrument ids not in the palette: {unknown}")
+
+    def test_chord_quality_follows_the_mode(self):
+        major = st.layers_for("solo_piano", "c", "major")["piano"]
+        minor = st.layers_for("solo_piano", "c", "minor")["piano"]
+        self.assertIn("CM7", major)
+        self.assertNotIn("Cm7", major)
+        self.assertIn("Cm7", minor)
 
     def test_tempo_matches_the_archetype(self):
         _, electronic = st.build("techno", seed=1)

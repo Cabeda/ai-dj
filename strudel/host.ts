@@ -44,7 +44,6 @@ const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")
 const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds } =
   await import("@strudel/webaudio")
-const sd = await import("superdough")
 const { registerSoundfonts } = await import("@strudel/soundfonts")
 const { samples } = await import("superdough")
 await import("@strudel/tonal") // registers .scale/.chord/.voicing
@@ -85,7 +84,6 @@ try {
 } catch (e: any) {
   log(`dirt-samples unavailable: ${e?.message ?? e}`)
 }
-installWavSink()
 
 const ctx: any = getAudioContext()
 
@@ -119,40 +117,14 @@ await evalScope({ setcpm, setcps })
 let currentCode = ""
 let pattern: any = null
 
-// -- capture: offline render of the current pattern --------------------------
-// A realtime AudioWorklet tap read silence (superdough builds its graph
-// asynchronously). Strudel ships the canonical offline path —
-// renderPatternAudio — which renders an OfflineAudioContext, needs no audio
-// device, and is what the REPL's "export" uses. renderPatternAudio writes a
-// download in the browser; we override DOM.createObjectURL/Blob plumbing by
-// capturing the WAV bytes it produces.
-const wavSink: { data: Uint8Array | null } = { data: null }
-
-function installWavSink() {
-  const g: any = globalThis
-  // renderPatternAudio builds a Blob from the WAV ArrayBuffer, then hands it to
-  // URL.createObjectURL and a download <a>. Capture the bytes as it is built.
-  g.Blob = class Blob {
-    parts: any[]
-    constructor(parts: any[]) {
-      this.parts = parts
-      const first = parts?.[0]
-      if (first && (first as any).byteLength !== undefined) {
-        const sliced = (first as any).slice ? (first as any).slice(0) : first
-        wavSink.data = new Uint8Array(sliced)
-      }
-    }
-  }
-  g.URL ??= {}
-  g.URL.createObjectURL = () => "ai-dj://wav"
-  g.URL.revokeObjectURL = () => {}
-  // the download <a> is a no-op through the document shim
+function log(msg: string) {
+  process.stderr.write(`[host] ${msg}\n`)
 }
 
-// superdough keeps the audio context AND its output controller in module
-// globals. Rendering swaps both, so the live scheduler must be paused for the
-// duration or the two race ("Attempting to connect nodes from different
-// contexts"). Serialise captures too: they mutate the same globals.
+// -- capture: offline render of the current pattern --------------------------
+// Rendering happens in a separate process (strudel/render.ts). Doing it here
+// meant swapping superdough's module-global context out from under the running
+// scheduler, which raced and produced silent renders.
 
 async function capture(path: string, seconds: number) {
   return captureNow(path, seconds)
@@ -166,24 +138,53 @@ async function captureNow(path: string, seconds: number) {
   // Render in a separate process. superdough keeps its context, controller and
   // caches in module globals; doing this in-process meant swapping them out
   // from under the running scheduler, which raced and produced silent renders.
-  const { spawnSync } = await import("node:child_process")
+  //
+  // Spawned asynchronously: a blocking spawn would freeze this event loop, so
+  // the Cyclist could not queue events and the live set would stutter on every
+  // capture.
+  const { fileURLToPath } = await import("node:url")
   const req = JSON.stringify({
     script: currentCode,
     seconds,
     cps: scheduler.cps,
     out: path,
   })
-  const renderer = new URL("./render.bundle.mjs", import.meta.url).pathname
-  const proc = spawnSync("bun", [renderer], {
-    input: req + "\n",
-    encoding: "utf8",
-    timeout: (seconds + 45) * 1000,
-    maxBuffer: 64 * 1024 * 1024,
+  const renderer = fileURLToPath(new URL("./render.bundle.mjs", import.meta.url))
+  const proc = Bun.spawn(["bun", renderer], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
   })
-  const stdout = typeof proc.stdout === "string" ? proc.stdout.trim() : ""
-  const line = stdout.split("\n").filter(Boolean).pop()
+  proc.stdin.write(req + "\n")
+  await proc.stdin.end()
+
+  const timeoutMs = (seconds + 10) * 1000
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    try {
+      proc.kill()
+    } catch {}
+  }, timeoutMs)
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  await proc.exited
+  clearTimeout(timer)
+
+  if (timedOut) {
+    log(`capture: renderer timed out after ${timeoutMs / 1000}s`)
+    return null
+  }
+  // the renderer logs to stderr; stdout carries only the JSON reply
+  const line = stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("{"))
+    .pop()
   if (!line) {
-    log(`capture: renderer produced nothing (stderr: ${(proc.stderr ?? "").slice(-300)})`)
+    log(`capture: renderer produced nothing (stderr: ${stderr.slice(-300)})`)
     return null
   }
   let res: any
@@ -199,10 +200,6 @@ async function captureNow(path: string, seconds: number) {
   }
   log(`capture: rendered peak=${Number(res.peak).toFixed(4)}`)
   return res.path ?? path
-}
-
-function log(msg: string) {
-  process.stderr.write(`[host] ${msg}\n`)
 }
 
 // -- protocol ---------------------------------------------------------------
