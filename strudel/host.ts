@@ -42,8 +42,9 @@ g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")
-const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds, renderPatternAudio } =
+const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds } =
   await import("@strudel/webaudio")
+const sd = await import("superdough")
 const { registerSoundfonts } = await import("@strudel/soundfonts")
 const { samples } = await import("superdough")
 await import("@strudel/tonal") // registers .scale/.chord/.voicing
@@ -148,28 +149,56 @@ function installWavSink() {
   // the download <a> is a no-op through the document shim
 }
 
+// superdough keeps the audio context AND its output controller in module
+// globals. Rendering swaps both, so the live scheduler must be paused for the
+// duration or the two race ("Attempting to connect nodes from different
+// contexts"). Serialise captures too: they mutate the same globals.
+
 async function capture(path: string, seconds: number) {
+  return captureNow(path, seconds)
+}
+
+async function captureNow(path: string, seconds: number) {
   if (!currentCode) {
     log("capture: no current code")
     return null
   }
-  wavSink.data = null
-  try {
-    const { pattern } = await evaluate(currentCode, transpiler)
-    const begin = 0
-    // renderPatternAudio's length is (end - begin) / cps * sampleRate, so
-    // begin/end are in cycles: seconds * cps cycles covers `seconds`.
-    const end = seconds * scheduler.cps
-    log(`capture: rendering ${seconds}s (cps=${scheduler.cps})`)
-    await renderPatternAudio(pattern, scheduler.cps, begin, end, ctx.sampleRate)
-    log(`capture: render done, wav bytes=${wavSink.data?.length ?? 0}`)
-    if (!wavSink.data || wavSink.data.length <= 44) return null
-    await Bun.write(path, wavSink.data)
-    return path
-  } catch (e: any) {
-    log(`capture render failed: ${e?.message ?? e}`)
+  // Render in a separate process. superdough keeps its context, controller and
+  // caches in module globals; doing this in-process meant swapping them out
+  // from under the running scheduler, which raced and produced silent renders.
+  const { spawnSync } = await import("node:child_process")
+  const req = JSON.stringify({
+    script: currentCode,
+    seconds,
+    cps: scheduler.cps,
+    out: path,
+  })
+  const renderer = new URL("./render.bundle.mjs", import.meta.url).pathname
+  const proc = spawnSync("bun", [renderer], {
+    input: req + "\n",
+    encoding: "utf8",
+    timeout: (seconds + 45) * 1000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  const stdout = typeof proc.stdout === "string" ? proc.stdout.trim() : ""
+  const line = stdout.split("\n").filter(Boolean).pop()
+  if (!line) {
+    log(`capture: renderer produced nothing (stderr: ${(proc.stderr ?? "").slice(-300)})`)
     return null
   }
+  let res: any
+  try {
+    res = JSON.parse(line)
+  } catch {
+    log(`capture: renderer output not JSON: ${line.slice(0, 200)}`)
+    return null
+  }
+  if (!res.ok) {
+    log(`capture: render failed: ${res.error}`)
+    return null
+  }
+  log(`capture: rendered peak=${Number(res.peak).toFixed(4)}`)
+  return res.path ?? path
 }
 
 function log(msg: string) {

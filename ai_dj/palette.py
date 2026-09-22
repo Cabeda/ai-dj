@@ -58,7 +58,7 @@ PALETTE = (
     _i("sub_bass", "bass", sonic_pi=":sine", strudel="sine"),
     _i("picked_bass", "bass", strudel="gm_acoustic_bass"),
     # -- synth --------------------------------------------------------------
-    _i("pad", "synth", sonic_pi=":hollow", strudel="supersaw"),
+    _i("pad", "synth", sonic_pi=":hollow", strudel="sawtooth"),
     _i("lead", "synth", sonic_pi=":prophet", strudel="sawtooth"),
     _i("arp", "synth", sonic_pi=":beep", strudel="triangle"),
     _i("drone", "synth", sonic_pi=":saw", strudel="saw"),

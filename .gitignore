@@ -32,3 +32,6 @@ strudel/host.bundle.mjs
 
 # run logs
 logs/
+
+# strudel host/renderer build output
+strudel/render.bundle.mjs

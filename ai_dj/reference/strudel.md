@@ -27,7 +27,8 @@ Strudel id in code.
 
 - **drums**: kick→`bd`, snare→`sd`, hat→`hh`, perc→`perc`
 - **bass**: acid_bass→`sawtooth`, sub_bass→`sine`
-- **synth**: pad→`supersaw`, lead→`sawtooth`, arp→`triangle`, drone→`saw`
+- **synth**: pad→`sawtooth`, lead→`sawtooth`, arp→`triangle`, drone→`saw`
+  (avoid `supersaw`: it needs an AudioWorklet, which the headless host lacks)
 - **keys**: piano→`gm_piano`, electric_piano→`gm_electric_piano_1`,
   harpsichord→`gm_harpsichord`, organ→`gm_church_organ`
 - **strings**: violin→`gm_violin`, viola→`gm_viola`, cello→`gm_cello`,

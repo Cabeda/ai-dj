@@ -68,7 +68,7 @@ _LAYER_BODIES = {
 
 # Additional layer bodies used by the archetypes below.
 _EXTRA = {
-    "padrich":  'note("[{root}3,{third}3,{fifth}3,{root}4]").s("supersaw")'
+    "padrich":  'note("[{root}3,{third}3,{fifth}3,{root}4]").s("sawtooth")'
                 '.attack(2).release(4).lpf(perlin.range(400,1600).slow(16))'
                 '.gain(0.18).slow(8)',
     "sub":      'note("{root}1").s("sine").gain(0.5).slow(2)',
