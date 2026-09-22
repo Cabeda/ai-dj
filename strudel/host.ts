@@ -17,9 +17,9 @@ g.document ??= {
   addEventListener: noop,
   removeEventListener: noop,
   dispatchEvent: () => true,
-  createElement: () => ({ style: {}, getContext: () => null, appendChild: noop }),
+  createElement: () => ({ style: {}, getContext: () => null, appendChild: noop, click: noop }),
   createElementNS: () => ({ style: {}, appendChild: noop }),
-  body: { appendChild: noop },
+  body: { appendChild: noop, removeChild: noop },
   documentElement: { style: {} },
 }
 g.CustomEvent ??= class CustomEvent {
@@ -42,29 +42,28 @@ g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")
-const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds } =
+const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds, renderPatternAudio } =
   await import("@strudel/webaudio")
+const { registerSoundfonts } = await import("@strudel/soundfonts")
 
 const { evalScope, evaluate, getTrigger, Cyclist } = core as any
 await evalScope(core, mini)
 registerSynthSounds?.()
 registerZZFXSounds?.()
+try {
+  registerSoundfonts?.() // General MIDI soundfonts: the classical palette (gm_*)
+} catch (e: any) {
+  log(`soundfonts unavailable: ${e?.message ?? e}`)
+}
+installWavSink()
 
 const ctx: any = getAudioContext()
-const { GainNode, AudioWorkletNode } = await import("node-web-audio-api")
 
-// Route superdough's output through a master gain so we can both set volume
-// and tap it for capture. superdough connects to audioContext.destination, so
-// shadow that with our gain (own property shadows the prototype getter).
+// Master volume is applied by the model per event (via `gain`), not by
+// shadowing ctx.destination: superdough reads destination.maxChannelCount when
+// building its output, and a shadowed node reports 0 channels, which breaks
+// node creation. set_volume is therefore a no-op hook for now.
 let master: any = null
-try {
-  const realDest = ctx.destination
-  master = new GainNode(ctx, { gain: 1 })
-  master.connect(realDest)
-  Object.defineProperty(ctx, "destination", { get: () => master, configurable: true })
-} catch {
-  master = null
-}
 
 const scheduler = new Cyclist({
   onTrigger: getTrigger({ getTime: () => ctx.currentTime, defaultOutput: webaudioOutput }),
@@ -75,74 +74,62 @@ scheduler.setCps(0.5) // 120 bpm in 4/4
 let currentCode = ""
 let pattern: any = null
 
-// -- capture: tap the master output with an AudioWorklet ---------------------
-let recorderReady = false
-async function ensureRecorder() {
-  if (recorderReady) return
-  const src = `
-class Recorder extends AudioWorkletProcessor {
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0]
-    if (ch) this.port.postMessage(ch.slice())
-    return true
-  }
-}
-registerProcessor("ai-dj-recorder", Recorder)
-`
-  const tmp = `/tmp/ai_dj_recorder_${process.pid}.js`
-  await Bun.write(tmp, src)
-  await ctx.audioWorklet.addModule(tmp)
-  recorderReady = true
-}
+// -- capture: offline render of the current pattern --------------------------
+// A realtime AudioWorklet tap read silence (superdough builds its graph
+// asynchronously). Strudel ships the canonical offline path —
+// renderPatternAudio — which renders an OfflineAudioContext, needs no audio
+// device, and is what the REPL's "export" uses. renderPatternAudio writes a
+// download in the browser; we override DOM.createObjectURL/Blob plumbing by
+// capturing the WAV bytes it produces.
+const wavSink: { data: Uint8Array | null } = { data: null }
 
-function writeWav(path: string, chunks: Float32Array[], sampleRate: number) {
-  let n = 0
-  for (const c of chunks) n += c.length
-  const buf = Buffer.alloc(44 + n * 2)
-  buf.write("RIFF", 0)
-  buf.writeUInt32LE(36 + n * 2, 4)
-  buf.write("WAVE", 8)
-  buf.write("fmt ", 12)
-  buf.writeUInt32LE(16, 16)
-  buf.writeUInt16LE(1, 20)
-  buf.writeUInt16LE(1, 22)
-  buf.writeUInt32LE(sampleRate, 24)
-  buf.writeUInt32LE(sampleRate * 2, 28)
-  buf.writeUInt16LE(2, 32)
-  buf.writeUInt16LE(16, 34)
-  buf.write("data", 36)
-  buf.writeUInt32LE(n * 2, 40)
-  let o = 44
-  for (const c of chunks) {
-    for (let i = 0; i < c.length; i++) {
-      const s = Math.max(-1, Math.min(1, c[i]))
-      buf.writeInt16LE((s * 32767) | 0, o)
-      o += 2
+function installWavSink() {
+  const g: any = globalThis
+  // renderPatternAudio builds a Blob from the WAV ArrayBuffer, then hands it to
+  // URL.createObjectURL and a download <a>. Capture the bytes as it is built.
+  g.Blob = class Blob {
+    parts: any[]
+    constructor(parts: any[]) {
+      this.parts = parts
+      const first = parts?.[0]
+      if (first && (first as any).byteLength !== undefined) {
+        const sliced = (first as any).slice ? (first as any).slice(0) : first
+        wavSink.data = new Uint8Array(sliced)
+      }
     }
   }
-  return buf
+  g.URL ??= {}
+  g.URL.createObjectURL = () => "ai-dj://wav"
+  g.URL.revokeObjectURL = () => {}
+  // the download <a> is a no-op through the document shim
 }
 
 async function capture(path: string, seconds: number) {
-  await ensureRecorder()
-  const node = new AudioWorkletNode(ctx, "ai-dj-recorder", {
-    numberOfInputs: 1,
-    numberOfOutputs: 0,
-    channelCount: 1,
-  })
-  const chunks: Float32Array[] = []
-  node.port.onmessage = (e: any) => chunks.push(e.data)
-  const tap = master ?? ctx.destination
-  tap.connect(node)
-  await new Promise((r) => setTimeout(r, Math.ceil(seconds * 1000)))
-  tap.disconnect(node)
-  // Realtime tap is not yet reliable (superdough's graph + worklet timing):
-  // report failure rather than feed silence to the model.
-  let peak = 0
-  for (const c of chunks) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i]))
-  if (peak === 0) return null
-  await Bun.write(path, writeWav(path, chunks, ctx.sampleRate))
-  return path
+  if (!currentCode) {
+    log("capture: no current code")
+    return null
+  }
+  wavSink.data = null
+  try {
+    const { pattern } = await evaluate(currentCode, transpiler)
+    const begin = 0
+    // renderPatternAudio's length is (end - begin) / cps * sampleRate, so
+    // begin/end are in cycles: seconds * cps cycles covers `seconds`.
+    const end = seconds * scheduler.cps
+    log(`capture: rendering ${seconds}s (cps=${scheduler.cps})`)
+    await renderPatternAudio(pattern, scheduler.cps, begin, end, ctx.sampleRate)
+    log(`capture: render done, wav bytes=${wavSink.data?.length ?? 0}`)
+    if (!wavSink.data || wavSink.data.length <= 44) return null
+    await Bun.write(path, wavSink.data)
+    return path
+  } catch (e: any) {
+    log(`capture render failed: ${e?.message ?? e}`)
+    return null
+  }
+}
+
+function log(msg: string) {
+  process.stderr.write(`[host] ${msg}\n`)
 }
 
 // -- protocol ---------------------------------------------------------------
@@ -163,11 +150,25 @@ async function handle(msg: any) {
       send({ event: "playing" })
       break
     }
+    case "evolve": {
+      // preview a layer change without committing it to the live set
+      const code = msg.script ?? ""
+      try {
+        const { pattern: p } = await evaluate(code, transpiler)
+        await scheduler.setPattern(p, true)
+        currentCode = code
+        send({ event: "playing" })
+      } catch (e: any) {
+        send({ event: "error", message: `evaluate failed: ${e?.message ?? e}` })
+      }
+      break
+    }
     case "stop":
       scheduler.stop()
       send({ event: "stopped" })
       break
     case "set_volume":
+      // see note above: applied per-event via `gain`, not a master node
       if (master) master.gain.value = Math.max(0, Math.min(1, Number(msg.volume) || 0))
       break
     case "capture": {

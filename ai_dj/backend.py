@@ -190,12 +190,17 @@ class StdioBackend(SoundBackend):
         self.proc.stdin.flush()
 
     def _wait(self, event_name, timeout):
+        """Wait for an event, surfacing host errors instead of swallowing them."""
         deadline = time.time() + timeout
         with self._cv:
             while True:
                 for i, event in enumerate(self._events):
-                    if event.get("event") == event_name:
+                    kind = event.get("event")
+                    if kind == event_name:
                         return self._events.pop(i)
+                    if kind == "error":
+                        self._events.pop(i)
+                        raise RuntimeError(f"host error: {event.get('message', 'unknown')}")
                 if self._dead:
                     raise RuntimeError("stdio backend host exited")
                 remaining = deadline - time.time()
@@ -222,7 +227,12 @@ class StdioBackend(SoundBackend):
 
     def capture(self, path: str, seconds: float):
         self._send({"op": "capture", "path": path, "seconds": float(seconds)})
-        event = self._wait("captured", seconds + 8)
+        try:
+            event = self._wait("captured", seconds + 20)
+        except RuntimeError as e:
+            # host reported a render failure — treat as no capture
+            self.log(f"[stdio] capture failed: {e}")
+            return None
         if event is None:
             return None
         return event.get("path", path)

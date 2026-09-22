@@ -11,13 +11,27 @@ terminal (Bun), in an embedded desktop shell, and in the browser.
 | --- | --- |
 | `boot` | works (~0.9s) |
 | `play` | works — evaluates Strudel code and schedules it |
+| `evolve` | works — preview a layer change without committing it |
 | `stop` | works |
-| `set_volume` | best-effort (master gain) |
-| `capture` | **not working** — the realtime AudioWorklet tap reports failure rather than feeding silence to the model |
+| `set_volume` | no-op — volume is per-event `gain` (a master node breaks superdough, see below) |
+| `capture` | **works** — offline render via Strudel's own `renderPatternAudio` |
 
-`capture` is the remaining blocker for switching the default backend. The
-robust fix is an **offline render** (`OfflineAudioContext`) of the current
-pattern rather than a realtime tap.
+Capture renders the current pattern through an `OfflineAudioContext` (the same
+path the REPL's "export" uses): exact, needs no audio device, and works for both
+built-in synths and the `gm_*` soundfonts. Output is a stereo 48kHz WAV.
+
+## Known constraints
+
+- **No master volume node.** SuperDough reads `audioContext.destination.maxChannelCount`
+  when building its output. Shadowing `destination` with a `GainNode` makes that
+  read `0` and node creation fails with `Invalid number of channels: 0`. Volume
+  is therefore applied per event via `gain`. A real master bus needs a different
+  approach.
+- **Sampled instruments are samples, not synths.** `s("bd")` and `s("gm_violin")`
+  need their banks registered. `registerSynthSounds` covers built-in synths;
+  `registerSoundfonts` covers the General MIDI palette. Drum samples still need
+  a sample pack or a bank.
+
 
 ## Build
 
