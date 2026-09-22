@@ -66,3 +66,10 @@ _Avoid_: feedback, suggestion.
 **Replace feedback**:
 Human direction that asks for a whole new set — a full vibe swap.
 _Avoid_: reset, restart, override.
+
+**Language**:
+The surface a set is written in — `sonic_pi` (Ruby DSL) or `strudel`
+(JavaScript patterns). Identifies the script's syntax, its reference document,
+and how it is validated. Distinct from the backend: Sonic Pi is always
+`sonic_pi`, Strudel is always `strudel`.
+_Avoid_: dialect, format.

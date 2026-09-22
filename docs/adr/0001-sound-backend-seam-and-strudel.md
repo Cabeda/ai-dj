@@ -55,5 +55,24 @@ daemon with a ~15s boot and awkward capture.
 - Templates, the LLM prompt/reference, and script validation are backend-specific
   and must be rewritten per backend. Strudel code is JavaScript evaluated to
   patterns, so its gate is evaluation, not `ruby -c`.
-- `capture` is trivial on Strudel (a Web Audio analyser) but stays
-  record-to-file on Sonic Pi.
+
+## Verification (1st tracer bullet)
+
+Built and verified: `strudel/host.ts` runs Strudel headless in **Bun** on Web
+Audio (`node-web-audio-api`), driven by the stdio protocol. `boot`, `play`,
+`stop`, `set_volume` work; `capture` does not yet.
+
+Two findings that constrain any future implementation:
+
+1. **Strudel must be bundled.** `@kabelsalat/web` ships a UMD bundle with no
+   ESM named exports, and `@strudel/core`'s barrel imports `SalatRepl` from it.
+   This fails under any ESM runtime (Bun/Node) — Strudel only loads when a
+   bundler resolves it (as Vite does for the REPL). `bun build` works.
+2. **Bun has no Web Audio**, so a host runtime must supply one. `node-web-audio-api`
+   works, and Strudel's draw/scope modules need a few DOM globals shimmed
+   (`document`, `window`, `CustomEvent`) before import.
+
+`capture` is the remaining blocker for making Strudel the default backend; the
+robust fix is an offline render (`OfflineAudioContext`) of the current pattern
+instead of a realtime AudioWorklet tap.
+
