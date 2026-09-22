@@ -58,12 +58,31 @@ try {
 } catch (e: any) {
   log(`soundfonts unavailable: ${e?.message ?? e}`)
 }
+// Sample maps. The REPL prebakes these same maps; without them `s("steinway")`
+// or `.bank("RolandTR909")` resolve to nothing and silently render silence.
+//   - tidal-drum-machines: TR-808/909/707/… kits (professional drum machines)
+//   - vcsl: Versilian Community Sample Library (CC0 orchestral/acoustic)
+//   - piano: Salamander-style grand pianos
+const SAMPLE_MAPS = [
+  "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json",
+  "https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json",
+  "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json",
+]
+const loaded: string[] = []
+for (const map of SAMPLE_MAPS) {
+  try {
+    await samples(map)
+    loaded.push(map.split("/").pop()!.replace(".json", ""))
+  } catch (e: any) {
+    log(`sample map failed (${map}): ${e?.message ?? e}`)
+  }
+}
+log(`sample maps: ${loaded.join(", ") || "none"}`)
+// legacy Dirt-Samples, kept for the s("bd")-style names used by older patterns
 try {
-  // drum samples (bd, hh, sd…) — the canonical Dirt-Samples pack
   await samples("github:tidalcycles/dirt-samples")
-  log("drum samples loaded")
 } catch (e: any) {
-  log(`drum samples unavailable: ${e?.message ?? e}`)
+  log(`dirt-samples unavailable: ${e?.message ?? e}`)
 }
 installWavSink()
 

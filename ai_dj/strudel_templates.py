@@ -35,8 +35,10 @@ def _mode():
 
 _LAYER_BODIES = {
     # electronic
-    "kick":     's("bd*4").gain(0.85)',
-    "hat":      's("hh*8").gain(rand.range(0.15,0.4)).pan(sine.range(0.3,0.7).slow(4))',
+    "kick":     's("RolandTR909_bd*4").gain(0.85)',
+    "kick808":  's("RolandTR808_bd*4").gain(0.85)',
+    "hat":      's("RolandTR909_hh*8").gain(rand.range(0.15,0.4)).pan(sine.range(0.3,0.7).slow(4))',
+    "shaker":   's("shaker_large*16").gain(rand.range(0.1,0.3))',
     "noise_fx": 's("white").gain(0.04).lpf(perlin.range(600,2400).slow(8))',
     "acid":     'n("0 0 3 5 0 7 5 3").scale("{key}:{mode}").s("sawtooth")'
                 '.lpf(sine.range(300,1400).slow(4)).gain(0.4)',
@@ -54,14 +56,38 @@ _LAYER_BODIES = {
     "cello":    'n("0 2 4 2").scale("{key}:{mode}").s("gm_cello")'
                 '.attack(0.2).release(1.2).gain(0.35).slow(2)',
     "pizz":     'note("[{root}2,{fifth}2]").s("gm_pizzicato_strings").gain(0.3)',
-    "harp":     'n("0 4 2 5 3 7").scale("{key}:{mode}").s("gm_orchestral_harp")'
-                '.gain(0.28).slow(2)',
+    "harp":     'n("0 4 2 5 3 7").scale("{key}:{mode}").s("harp")'
+                '.gain(0.45).slow(2)',
     "piano":    'chord("<{key^}m7 {key^}m7 {key^}M7 {key^}m7>").voicing()'
-                '.s("gm_piano").gain(0.3).slow(4)',
+                '.s("piano").gain(0.3).slow(4)',
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
                 '.attack(0.1).release(1).gain(0.25)',
-    "timpani":  'note("{root}1").s("gm_timpani").gain(0.4).slow(4)',
+    "timpani":  'note("{root}1").s("timpani").gain(0.9).slow(4)',
 }
+
+
+# Additional layer bodies used by the archetypes below.
+_EXTRA = {
+    "padrich":  'note("[{root}3,{third}3,{fifth}3,{root}4]").s("supersaw")'
+                '.attack(2).release(4).lpf(perlin.range(400,1600).slow(16))'
+                '.gain(0.18).slow(8)',
+    "sub":      'note("{root}1").s("sine").gain(0.5).slow(2)',
+    "rhodes":   'chord("<{key^}m9 {key^}m9 {key^}m7 {key^}m9>").voicing()'
+                '.s("gm_clavinet").gain(0.25).room(0.4).slow(4)',
+    "vibes":    'n("0 4 2 5 7 4").scale("{key}:{mode}").s("vibraphone")'
+                '.gain(0.35).room(0.3).slow(2)',
+    "marimba":  'n("0 2 4 7").scale("{key}:{mode}").s("marimba")'
+                '.gain(0.5).slow(2)',
+    "vinyl":    's("white*16").gain(0.02).hpf(2000)',
+    "strings":  'note("[{root}3,{third}3,{fifth}3]").s("gm_string_ensemble_1")'
+                '.attack(2).release(5).gain(0.22).slow(8)',
+    "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
+                '.attack(0.1).release(1).gain(0.25)',
+    "folkharp": 'n("0 4 2 5 3 7").scale("{key}:{mode}").s("folkharp")'
+                '.gain(0.4).room(0.35).slow(2)',
+    "sax":      'n("4 2 0 2").scale("{key}:{mode}").s("sax").gain(0.3)',
+}
+_LAYER_BODIES.update(_EXTRA)
 
 _SCALE_DEGREES = {
     "minor": [0, 2, 3, 5, 7, 8, 10],
@@ -113,17 +139,24 @@ def _arch(*layers):
 
 _ARCHETYPES = {
     # electronic
-    "techno":    _arch("kick", "hat", "acid", "noise_fx"),
-    "house":     _arch("kick", "hat", "acid", "piano"),
-    "ambient":   _arch("pad", "choir", "noise_fx"),
-    "downtempo": _arch("kick", "hat", "piano", "noise_fx"),
-    "synthwave": _arch("kick", "hat", "acid", "lead", "arp"),
+    "techno":    _arch("kick808", "hat", "acid", "vinyl"),
+    "house":     _arch("kick", "hat", "acid", "rhodes"),
+    "downtempo": _arch("kick808", "shaker", "rhodes", "vinyl"),
+    "synthwave": _arch("kick808", "hat", "acid", "lead", "arp"),
+    # focus / ambient: no drums or a very soft pulse, built for long listening
+    "ambient":   _arch("padrich", "strings", "vibes", "vinyl"),
+    "deep_focus": _arch("padrich", "sub", "vibes", "vinyl"),
+    "drone":     _arch("padrich", "strings", "sub", "vinyl"),
+    "lofi_study": _arch("kick808", "shaker", "rhodes", "vinyl"),
+    "piano_study": _arch("piano", "sub", "vinyl"),
+    "vibes_room": _arch("vibes", "sub", "piano", "vinyl"),
     # classical
-    "string_quartet": _arch("pad", "cello", "violin", "pizz"),
+    "string_quartet": _arch("strings", "cello", "violin", "pizz"),
     "chamber":        _arch("cello", "piano", "violin"),
-    "orchestral":     _arch("pad", "choir", "violin", "timpani", "flute"),
+    "orchestral":     _arch("strings", "choir", "violin", "timpani", "flute"),
     "solo_piano":     _arch("piano", "harp"),
-    "harp_choir":     _arch("choir", "harp", "flute"),
+    "harp_choir":     _arch("choir", "folkharp", "flute"),
+    "marimba_room":   _arch("marimba", "sub", "vibes", "vinyl"),
 }
 
 ARCHETYPE_NAMES = tuple(_ARCHETYPES)
@@ -144,6 +177,12 @@ _ARCHETYPE_BPM = {
     "synthwave": (100, 118),
     "downtempo": (78, 96),
     "ambient": (60, 80),
+    "deep_focus": (58, 74),
+    "drone": (54, 68),
+    "lofi_study": (70, 86),
+    "piano_study": (58, 76),
+    "vibes_room": (60, 78),
+    "marimba_room": (66, 84),
     "string_quartet": (62, 84),
     "chamber": (66, 92),
     "orchestral": (58, 80),
@@ -158,6 +197,12 @@ _ARCHETYPE_MODES = {
     "synthwave": ["minor", "aeolian"],
     "downtempo": ["minor", "dorian", "mixolydian"],
     "ambient": ["minor", "dorian", "aeolian"],
+    "deep_focus": ["minor", "dorian", "aeolian"],
+    "drone": ["minor", "aeolian", "dorian"],
+    "lofi_study": ["minor", "dorian", "major"],
+    "piano_study": ["major", "minor", "dorian"],
+    "vibes_room": ["major", "minor", "dorian"],
+    "marimba_room": ["major", "dorian", "minor"],
     "string_quartet": ["minor", "major", "dorian"],
     "chamber": ["major", "minor", "dorian"],
     "orchestral": ["minor", "major", "aeolian"],

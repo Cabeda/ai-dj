@@ -17,7 +17,19 @@ class PaletteTests(unittest.TestCase):
         strudel = palette.names(palette.STRUDEL)
         for name in ("violin", "cello", "flute", "trumpet", "piano", "timpani"):
             self.assertIn(name, strudel)
-            self.assertTrue(palette.realisation(name, palette.STRUDEL).startswith("gm_"))
+        # classical voices are sampled (GM soundfont or a real recorded library)
+        self.assertEqual(palette.realisation("violin", palette.STRUDEL), "gm_violin")
+        self.assertEqual(palette.realisation("timpani", palette.STRUDEL), "timpani")
+
+    def test_prefers_recorded_instruments_over_soundfonts(self):
+        # VCSL and the piano/drum-machine packs sound better than GM, so the
+        # headline instruments from those families must not be GM soundfonts.
+        for name in ("piano", "grand_piano", "harp", "timpani", "vibraphone",
+                     "marimba", "kick", "snare", "hat", "shaker"):
+            self.assertFalse(
+                palette.realisation(name, palette.STRUDEL).startswith("gm_"),
+                f"{name} regressed to a GM soundfont",
+            )
 
     def test_sonic_pi_does_not_support_classical(self):
         sonic = palette.names(palette.SONIC_PI)
