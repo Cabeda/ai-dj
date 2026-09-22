@@ -32,6 +32,8 @@ class Control:
         if text:
             with self._lock:
                 self.feedback.append(text)
+                # loop may be stalled between drains — don't grow forever
+                self.feedback = self.feedback[-100:]
 
     def drain_feedback(self):
         with self._lock:

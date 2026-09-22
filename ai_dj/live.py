@@ -71,6 +71,7 @@ class Feedback:
             if line:
                 with self._lock:
                     self._items.append(line)
+                    self._items = self._items[-100:]
 
     def drain(self):
         with self._lock:

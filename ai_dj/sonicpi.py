@@ -39,6 +39,7 @@ class SonicPi:
         self._running = False
         self._ready = threading.Event()
         self._errors = []
+        self._listen_sock = None
         self.audio_driver = None
         self.audio_output = None
 
@@ -95,18 +96,23 @@ class SonicPi:
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("127.0.0.1", self.gui_listen))
         srv.settimeout(0.5)
-        while self._running:
-            try:
-                data, _ = srv.recvfrom(65535)
-            except socket.timeout:
-                continue
-            except OSError:
-                break
-            try:
-                addr, args = osc.decode(data)
-            except Exception:
-                continue
-            self._handle(addr, args)
+        self._listen_sock = srv
+        try:
+            while self._running:
+                try:
+                    data, _ = srv.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                try:
+                    addr, args = osc.decode(data)
+                except Exception:
+                    continue
+                self._handle(addr, args)
+        finally:
+            srv.close()
+            self._listen_sock = None
 
     def _handle(self, addr, args):
         if addr == "/ack":
@@ -117,10 +123,12 @@ class SonicPi:
         elif addr == "/error":
             msg = f"run {args[0]} line {args[3]}: {args[1]}" if len(args) > 3 else str(args)
             self._errors.append(msg)
+            self._errors = self._errors[-100:]
             self.log(f"[sp ERROR] {msg}")
         elif addr == "/syntax_error":
             msg = f"syntax run {args[0]} line {args[3]}: {args[1]}" if len(args) > 3 else str(args)
             self._errors.append(msg)
+            self._errors = self._errors[-100:]
             self.log(f"[sp SYNTAX ERROR] {msg}")
         elif addr == "/log/multi_message":
             if isinstance(args, list) and len(args) > 4:
@@ -210,11 +218,23 @@ class SonicPi:
         return None
 
     def shutdown(self):
+        if not self._running and (not self.proc or self.proc.poll() is not None):
+            return  # already down
         self._running = False
-        try:
-            self._send(self.daemon_port, "/daemon/exit", self.token)
-        except OSError:
-            pass
+        # boot may have failed before the handshake — no token/port yet
+        if self.daemon_port is not None and self.token is not None:
+            try:
+                self._send(self.daemon_port, "/daemon/exit", self.token)
+            except (OSError, TypeError):
+                pass
         time.sleep(0.5)
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait(timeout=5)
+        if self.proc and self.proc.stdout:
+            self.proc.stdout.close()
+        self._sock.close()

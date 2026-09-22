@@ -70,4 +70,6 @@ def load_latest(session_id):
     p = os.path.join(BASE, session_id, "last.rb")
     if not os.path.islink(p):
         raise FileNotFoundError(f"no session {session_id}")
-    return os.readlink(p), open(os.path.join(BASE, session_id, os.readlink(p))).read()
+    target = os.path.join(BASE, session_id, os.readlink(p))
+    with open(target) as f:
+        return os.readlink(p), f.read()

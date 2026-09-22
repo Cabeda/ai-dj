@@ -48,11 +48,42 @@ def launch(a, provider, model, base_url, key):
 
     env = os.environ.copy()
     env["AI_DJ_URL"] = f"http://127.0.0.1:{port}"
+    proc = None
+    # The TUI must own the tty foreground — otherwise keystrokes (ctrl+q)
+    # are delivered to this Python process and bun never sees them.
+    import signal
+    signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+    signal.signal(signal.SIGTTIN, signal.SIG_IGN)
     try:
-        subprocess.run(["bun", "run", os.path.join(TUI_DIR, "index.ts")], env=env)
+        proc = subprocess.Popen(
+            ["bun", "run", os.path.join(TUI_DIR, "index.ts")],
+            env=env, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr,
+            start_new_session=False,
+            preexec_fn=os.setpgrp)
+        try:
+            os.tcsetpgrp(sys.stdin.fileno(), proc.pid)
+        except OSError:
+            pass
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            pass
     except FileNotFoundError:
         print("[tui] bun not found; install from https://bun.sh", file=sys.stderr)
         sys.exit(2)
     finally:
+        # reclaim the tty for cleanup prints
+        try:
+            os.tcsetpgrp(sys.stdin.fileno(), os.getpgrp())
+        except OSError:
+            pass
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
         sp.shutdown()
         srv.shutdown()
+        srv.server_close()

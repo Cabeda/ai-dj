@@ -96,10 +96,11 @@ def _system(kind, reference=True):
 
 def load_env_key(env_path):
     if env_path and os.path.exists(env_path):
-        for line in open(env_path):
-            m = re.match(r"export\s+OPENCODE_API_KEY\s*=\s*(.+)", line)
-            if m:
-                return m.group(1).strip().strip('"').strip("'")
+        with open(env_path) as f:
+            for line in f:
+                m = re.match(r"export\s+OPENCODE_API_KEY\s*=\s*(.+)", line)
+                if m:
+                    return m.group(1).strip().strip('"').strip("'")
     return os.environ.get("OPENCODE_API_KEY", "")
 
 
@@ -111,7 +112,8 @@ def _audio_part(path):
              "-codec:a", "libmp3lame", "-qscale:a", "7", down],
             capture_output=True, check=True)
         path = down
-    b64 = base64.b64encode(open(path, "rb").read()).decode()
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
     return {"type": "input_audio", "input_audio": {"data": b64, "format": "mp3"}}
 
 

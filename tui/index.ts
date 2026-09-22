@@ -8,7 +8,11 @@ import {
 
 const URL = process.env.AI_DJ_URL ?? "http://127.0.0.1:8765"
 
-const renderer = await createCliRenderer({ exitOnCtrlC: true, backgroundColor: "#0d0f12" })
+const renderer = await createCliRenderer({
+  exitOnCtrlC: false,
+  exitSignals: [],
+  backgroundColor: "#0d0f12",
+})
 
 const status = new TextRenderable(renderer, {
   id: "status",
@@ -88,7 +92,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "drag select  ·  tab switch focus  ·  ctrl+s apply script  ·  ctrl+q quit",
+  content: "drag select  ·  tab switch focus  ·  ctrl+s apply script  ·  ctrl+q / ctrl+c quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -159,6 +163,8 @@ let animTarget = ""
 let animPos = 0
 let animChunk = 4
 let stickBottom = true
+let destroyed = false
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const SCRIPT_TITLE = " Sonic Pi script "
 const CURSOR = "▌"
@@ -245,14 +251,45 @@ scriptArea.on("focused", () => {
   if (animTimer) cancelAnim(true)
 })
 
+function stopTimers() {
+  destroyed = true
+  if (animTimer) {
+    clearInterval(animTimer)
+    animTimer = null
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function destroyAll() {
+  if (destroyed) return
+  stopTimers()
+  // renderer.destroy() can hang on an active render pass; leave immediately.
+  process.exit(0)
+}
+
+// belt-and-suspenders: any external destroy path also exits the process
+renderer.on("destroy", () => {
+  stopTimers()
+  setTimeout(() => process.exit(0), 50)
+})
+
 renderer.keyInput.on("keypress", (key) => {
   if (animTimer && scriptArea.focused && !key.ctrl && !key.meta) {
     cancelAnim(true)
   }
-  if (key.ctrl && key.name === "s") {
+  if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
     applyScript()
-  } else if (key.ctrl && key.name === "q") {
-    renderer.destroy()
+  } else if (
+    key.ctrl &&
+    (key.name === "q" ||
+      key.name === "c" ||
+      key.sequence === "\u0011" ||
+      key.sequence === "\u0003")
+  ) {
+    destroyAll()
   } else if (key.name === "tab") {
     scriptFocused = !scriptFocused
     if (scriptFocused) scriptArea.focus()
@@ -266,9 +303,11 @@ function truncate(s: string, n: number): string {
 }
 
 async function poll() {
+  if (destroyed) return
   try {
     const r = await fetch(URL + "/state")
     const s = (await r.json()) as Record<string, any>
+    if (destroyed) return
     const state = s.running ? "● playing" : "○ idle"
     const line =
       `ai-dj ${state}  ${s.bpm ?? "?"}bpm  ${s.key ?? "?"} ${s.mode ?? ""}  ` +
@@ -284,10 +323,11 @@ async function poll() {
       animateScript(s.script)
     }
   } catch {
+    if (destroyed) return
     status.content = truncate(`ai-dj  cannot reach ${URL} — is 'ai-dj tui' running?`, renderer.width)
   }
 }
 
 scriptArea.focus()
 await poll()
-setInterval(poll, 1000)
+pollTimer = setInterval(poll, 1000)
