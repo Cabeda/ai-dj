@@ -19,6 +19,12 @@ APP = "/Applications/Sonic Pi.app/Contents/Resources/app/server"
 RUBY = f"{APP}/native/ruby/bin/ruby"
 DAEMON = f"{APP}/ruby/bin/daemon.rb"
 
+# Repeated SuperSonic reconnect chatter — noise, not useful log.
+_SP_NOISE = (
+    "Daemon SuperSonic Conn: connection lost",
+    "Daemon SuperSonic Conn: reconnecting",
+)
+
 
 class SonicPi:
     def __init__(self, log=print):
@@ -79,8 +85,10 @@ class SonicPi:
 
     def _drain_stdout(self):
         for line in self.proc.stdout:
-            if line.strip():
-                self.log(f"[sp] {line.rstrip()}")
+            s = line.rstrip()
+            if not s.strip() or any(n in s for n in _SP_NOISE):
+                continue
+            self.log(f"[sp] {s}")
 
     def _listen(self):
         srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

@@ -1,8 +1,6 @@
 // ai-dj TUI — shows the live Sonic Pi script (editable), queues feedback.
 import {
   BoxRenderable,
-  InputRenderable,
-  InputRenderableEvents,
   ScrollBoxRenderable,
   TextRenderable,
   TextareaRenderable,
@@ -51,19 +49,29 @@ const logScroll = new ScrollBoxRenderable(renderer, {
 })
 logScroll.add(logView)
 
-const feedback = new InputRenderable(renderer, {
+const feedback = new TextareaRenderable(renderer, {
   id: "feedback",
-  placeholder: "type feedback, Enter to queue (e.g. 'more bass', 'add hats')",
+  height: 1,
   width: "100%",
+  placeholder: "type feedback, Enter to queue (e.g. 'more bass', 'add hats')",
+  wrapMode: "none",
   backgroundColor: "#12151a",
   focusedBackgroundColor: "#1b2028",
   textColor: "#e6edf3",
   cursorColor: "#7CFFB2",
+  keyBindings: [{ name: "return", action: "submit" }],
+  onSubmit: () => {
+    const value = feedback.plainText.trim()
+    feedback.setText("")
+    if (!value) return
+    void post("/feedback", { text: value })
+    status.content = `ai-dj  queued feedback: ${value}`
+  },
 })
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "tab switch focus  ·  ctrl+s apply script  ·  ctrl+q quit",
+  content: "drag select  ·  tab switch focus  ·  ctrl+s apply script  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -72,6 +80,7 @@ const hints = new TextRenderable(renderer, {
 const scriptPanel = new BoxRenderable(renderer, {
   id: "scriptpanel",
   flexGrow: 3,
+  width: "50%",
   borderStyle: "rounded",
   borderColor: "#2a3138",
   title: " Sonic Pi script ",
@@ -83,6 +92,7 @@ scriptPanel.add(scriptArea)
 const logPanel = new BoxRenderable(renderer, {
   id: "logpanel",
   flexGrow: 1,
+  width: "50%",
   borderStyle: "rounded",
   borderColor: "#2a3138",
   title: " log ",
@@ -99,13 +109,6 @@ const middle = new BoxRenderable(renderer, {
 })
 middle.add(scriptPanel)
 middle.add(logPanel)
-
-const feedbackRow = new BoxRenderable(renderer, {
-  id: "fbrow",
-  flexDirection: "row",
-  width: "100%",
-  height: 1,
-})
 
 const root = new BoxRenderable(renderer, {
   id: "root",
@@ -141,13 +144,6 @@ function applyScript() {
   void post("/script", { ruby })
   status.content = "ai-dj  applied manual edit"
 }
-
-feedback.on(InputRenderableEvents.ENTER, (value: string) => {
-  if (!value.trim()) return
-  void post("/feedback", { text: value })
-  feedback.value = ""
-  status.content = `ai-dj  queued feedback: ${value}`
-})
 
 renderer.keyInput.on("keypress", (key) => {
   if (key.ctrl && key.name === "s") {
