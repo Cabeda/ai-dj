@@ -1,0 +1,242 @@
+"""Sound backend seam.
+
+The orchestrator (state machine, LLM client, control server, UI) talks to sound
+only through :class:`SoundBackend`, so the engine is swappable: Sonic Pi for the
+terminal today, Strudel (Web Audio) for the browser / embedded desktop next.
+See docs/adr/0001-sound-backend-seam-and-strudel.md.
+
+Contract:
+
+    boot(timeout)          start the engine; ready to accept a script
+    play(script)           (re)start the live set from a script
+    stop()                 silence all output
+    set_volume(volume)     master volume, 0.0..1.0
+    capture(path, seconds) record a sample; return the path, or None on failure
+    shutdown()             stop the engine and release resources
+
+An out-of-process backend speaks line-delimited JSON on stdio so the Strudel
+host can be a JS process driven by the same contract:
+
+    -> {"op": "boot", "timeout": 90}
+    <- {"event": "ready"}
+    -> {"op": "play", "script": "..."}
+    -> {"op": "stop"}
+    -> {"op": "set_volume", "volume": 0.8}
+    -> {"op": "capture", "path": "...", "seconds": 10}
+    <- {"event": "captured", "path": "..."} | {"event": "error", "message": "..."}
+    -> {"op": "shutdown"}
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import threading
+import time
+from abc import ABC, abstractmethod
+
+BACKEND_NAME = "abstract"
+
+
+class SoundBackend(ABC):
+    """The seam between the DJ logic and the sound engine."""
+
+    name = BACKEND_NAME
+
+    @abstractmethod
+    def boot(self, timeout: float = 90, audio_driver=None):
+        """Start the engine. Raise on failure."""
+
+    @abstractmethod
+    def play(self, script: str) -> None:
+        """Start (or replace) the live set with `script`."""
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Silence all output."""
+
+    @abstractmethod
+    def set_volume(self, volume: float) -> None:
+        """Set master volume in 0.0..1.0."""
+
+    @abstractmethod
+    def capture(self, path: str, seconds: float):
+        """Record `seconds` of output to `path`; return path or None."""
+
+    @abstractmethod
+    def shutdown(self) -> None:
+        """Stop the engine and release resources. Idempotent."""
+
+    # Optional: instruments this backend can play (canonical palette names).
+    def instruments(self):
+        from . import palette
+
+        return palette.names(self.name)
+
+
+class SonicPiBackend(SoundBackend):
+    """Terminal backend: the existing Sonic Pi daemon controller."""
+
+    name = "sonic_pi"
+
+    def __init__(self, log=print, sp=None):
+        if sp is None:
+            from .sonicpi import SonicPi
+
+            sp = SonicPi(log=log)
+        self._sp = sp
+        self.log = log
+
+    @property
+    def raw(self):
+        return self._sp
+
+    @property
+    def audio_output(self):
+        return getattr(self._sp, "audio_output", None)
+
+    @audio_output.setter
+    def audio_output(self, value):
+        self._sp.audio_output = value
+
+    def boot(self, timeout: float = 90, audio_driver=None):
+        return self._sp.boot(timeout=timeout, audio_driver=audio_driver)
+
+    def play(self, script: str) -> None:
+        self._sp.run_code(script)
+
+    def stop(self) -> None:
+        self._sp.stop_all()
+
+    def set_volume(self, volume: float) -> None:
+        self._sp.set_volume(volume)
+
+    def capture(self, path: str, seconds: float):
+        return self._sp.capture(path, seconds)
+
+    def shutdown(self) -> None:
+        self._sp.shutdown()
+
+
+class StdioBackend(SoundBackend):
+    """Out-of-process backend over line-delimited JSON on stdio.
+
+    Used to drive a JS host (e.g. a Strudel runtime) with the same contract.
+    """
+
+    name = "stdio"
+
+    def __init__(self, argv, log=print, stderr=None, name=None):
+        self.argv = list(argv)
+        self.log = log
+        self._stderr = stderr
+        if name:
+            # the host's palette, e.g. name="strudel"
+            self.name = name
+        self.proc = None
+        self._events = []
+        self._dead = False
+        self._cv = threading.Condition()
+
+    # -- process plumbing ---------------------------------------------------
+    def _start(self):
+        if self.proc is not None:
+            return
+        self.proc = subprocess.Popen(
+            self.argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=self._stderr,
+            text=True,
+            bufsize=1,
+        )
+        threading.Thread(target=self._read_loop, daemon=True).start()
+
+    def _read_loop(self):
+        assert self.proc is not None and self.proc.stdout is not None
+        for line in self.proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                self.log(f"[stdio] non-JSON from host: {line[:200]}")
+                continue
+            with self._cv:
+                self._events.append(event)
+                self._cv.notify_all()
+        with self._cv:
+            self._dead = True
+            self._cv.notify_all()
+
+    def _send(self, obj):
+        if self.proc is None or self.proc.stdin is None:
+            raise RuntimeError("stdio backend not started")
+        self.proc.stdin.write(json.dumps(obj) + "\n")
+        self.proc.stdin.flush()
+
+    def _wait(self, event_name, timeout):
+        deadline = time.time() + timeout
+        with self._cv:
+            while True:
+                for i, event in enumerate(self._events):
+                    if event.get("event") == event_name:
+                        return self._events.pop(i)
+                if self._dead:
+                    raise RuntimeError("stdio backend host exited")
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return None
+                self._cv.wait(remaining)
+
+    # -- SoundBackend -------------------------------------------------------
+    def boot(self, timeout: float = 90, audio_driver=None):
+        self._start()
+        self._send({"op": "boot", "timeout": timeout})
+        if self._wait("ready", timeout) is None:
+            raise RuntimeError("stdio backend did not become ready")
+        return self
+
+    def play(self, script: str) -> None:
+        self._send({"op": "play", "script": script})
+
+    def stop(self) -> None:
+        self._send({"op": "stop"})
+
+    def set_volume(self, volume: float) -> None:
+        self._send({"op": "set_volume", "volume": float(volume)})
+
+    def capture(self, path: str, seconds: float):
+        self._send({"op": "capture", "path": path, "seconds": float(seconds)})
+        event = self._wait("captured", seconds + 8)
+        if event is None:
+            return None
+        return event.get("path", path)
+
+    def shutdown(self) -> None:
+        if self.proc is None:
+            return
+        try:
+            self._send({"op": "shutdown"})
+        except (OSError, RuntimeError):
+            pass
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except OSError:
+            pass
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait(timeout=3)
+        for stream in (self.proc.stdout, self.proc.stderr):
+            try:
+                if stream:
+                    stream.close()
+            except OSError:
+                pass
+        self.proc = None

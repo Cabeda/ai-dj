@@ -1,0 +1,59 @@
+# Adopt a pluggable sound backend; target Strudel for browser and embedded desktop
+
+## Status
+
+accepted
+
+## Context
+
+ai-dj live-codes a music script, listens to its own output, and evolves it with
+an LLM. Today the only sound backend is Sonic Pi: a Ruby DSL driving a
+SuperCollider/SuperSonic daemon that runs as a separate native process. The
+product must also become a single embeddable desktop app and, later, a browser
+app with an in-browser LLM — and it must support classical instruments.
+
+Sonic Pi cannot meet those goals: there is no browser path, it cannot be
+embedded as a library, it has no orchestral timbres, and it is a heavy native
+daemon with a ~15s boot and awkward capture.
+
+## Decision
+
+1. Route all sound through a **SoundBackend** seam — `boot`, `play`, `stop`,
+   `set_volume`, `capture`, `shutdown` — so the orchestrator (state machine,
+   LLM client, control server, UI) never depends on a specific engine.
+2. Keep **Sonic Pi as the terminal backend** for now (it already produces sound
+   and works).
+3. Target **Strudel** as the strategic backend for the **browser and embedded
+   desktop**: it runs in-page on Web Audio, embeds as a library, ships General
+   MIDI soundfonts (`gm_*`) for classical voices, reads `.sf2`, can drive Csound
+   WASM, and can emit MIDI.
+4. Treat **classical support as a sampled-instrument concern**, expressed as an
+   **instrument palette** the model must choose from — not as synthesis. Each
+   instrument names its realisation per backend, and a backend advertises only
+   the instruments it can play.
+5. Out-of-process backends speak a **line-delimited JSON stdio protocol** so the
+   Strudel host can be a JS process driven by the same contract.
+
+## Considered options
+
+- **Sonic Pi everywhere.** Rejected: no browser path, no embedding, no orchestral
+  timbres, heavy native daemon.
+- **Strudel everywhere, including the terminal.** Rejected for now: Web Audio has
+  no terminal host; it would require `node-web-audio-api` or a headless browser.
+  The terminal keeps Sonic Pi.
+- **Synthesis only, no samples.** Rejected: classical instruments require
+  sampled timbres.
+
+## Consequences
+
+- Adding Strudel becomes an adapter, not a rewrite: the orchestrator, control
+  server, UI, and LLM client stay backend-agnostic.
+- Strudel is **AGPL-3.0-or-later** (copyleft with a network clause). If ai-dj
+  bundles Strudel it must be distributed under AGPL.
+- Two backends coexist during the transition: Sonic Pi for the terminal,
+  Strudel for browser/desktop.
+- Templates, the LLM prompt/reference, and script validation are backend-specific
+  and must be rewritten per backend. Strudel code is JavaScript evaluated to
+  patterns, so its gate is evaluation, not `ruby -c`.
+- `capture` is trivial on Strudel (a Web Audio analyser) but stays
+  record-to-file on Sonic Pi.

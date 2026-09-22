@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 from . import llm, session, templates
-from .sonicpi import SonicPi
+from .backend import SonicPiBackend
 from .live import run
 
 
@@ -90,27 +90,28 @@ def resolve_llm(a):
     return "go", a.model or llm.DEFAULT_MODEL, None, key
 
 
-def make_sonic(a, log=print):
-    sp = SonicPi(log=log)
+def make_backend(a, log=print):
+    """Build the sound backend for this run (Sonic Pi for the terminal)."""
+    backend = SonicPiBackend(log=log)
     if getattr(a, "output", None):
-        sp.audio_output = a.output
-        log(f"[audio] pinned output device: {sp.audio_output}")
+        backend.audio_output = a.output
+        log(f"[audio] pinned output device: {backend.audio_output}")
     else:
         from .audio import active_output
         act = active_output()
         if act:
             log(f"[audio] following system default output: {act['name']} ({act['transport']})")
-    return sp
+    return backend
 
 
 def run_live(a, provider, model, base_url, key):
-    sp = make_sonic(a)
+    backend = make_backend(a)
     print(f"[llm] provider={provider} model={model}")
     return run(key, model, a.env, new_seed=getattr(a, "seed", None),
                session_id=getattr(a, "session_id", None),
                prompt=getattr(a, "prompt", None),
                tick=getattr(a, "tick", 10), dry=getattr(a, "dry", False),
-               sonic=sp, provider=provider, base_url=base_url,
+               backend=backend, provider=provider, base_url=base_url,
                reference=not getattr(a, "no_reference", False),
                feedback_enabled=not getattr(a, "no_feedback", False),
                reasoning=getattr(a, "reasoning", "none"))

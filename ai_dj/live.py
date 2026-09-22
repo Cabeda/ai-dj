@@ -20,7 +20,8 @@ import sys
 import threading
 import time
 
-from . import llm, session, sonicpi
+from . import llm, session
+from .backend import SonicPiBackend
 from .state import DJState, parse_layers
 from .templates import default_layers, random_layers
 
@@ -118,9 +119,9 @@ def _diff(a, b):
 
 
 def run(key, model, env, new_seed=None, session_id=None, prompt=None,
-        tick=TICK_SECONDS, dry=False, sonic=None, provider="go", base_url=None,
+        tick=TICK_SECONDS, dry=False, backend=None, provider="go", base_url=None,
         reference=True, feedback_enabled=True, reasoning="none", control=None):
-    sp = sonic or sonicpi.SonicPi()
+    backend = backend or SonicPiBackend()
     cap = os.path.join("/tmp", f"ai_dj_cap_{os.getpid()}.wav")
     fb = Feedback(feedback_enabled)
 
@@ -165,9 +166,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     session.save_script(sess_path, script)
     sync_state(script)
 
-    sp.boot()
-    sp.set_volume(1.0)
-    sp.run_code(script)
+    backend.boot()
+    backend.set_volume(1.0)
+    backend.play(script)
     log("[play] starter running (instant)")
     sync_state(script)
 
@@ -187,7 +188,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             state.last_action = "manual edit"
             script = manual
             session.save_script(sess_path, script)
-            sp.run_code(script)
+            backend.play(script)
             sync_state(script)
             prev_sig = None
             manual_rev[0] += 1
@@ -195,11 +196,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
 
     def run_command(cmd):
         if cmd == "stop":
-            sp.stop_all()
+            backend.stop()
             log("[cmd] stopped")
         elif cmd == "resume":
             with apply_lock:
-                sp.run_code(script)
+                backend.play(script)
             log("[cmd] resumed")
 
     wake = threading.Event()
@@ -237,7 +238,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 if not valid_ruby(script):
                     raise ValueError("rendered seed failed ruby -c")
                 name = session.save_script(sess_path, script)
-                sp.run_code(script)
+                backend.play(script)
                 log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
                 sync_state(script)
         except Exception as e:
@@ -296,14 +297,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     continue
                 with apply_lock:
                     name = session.save_script(sess_path, script)
-                    sp.run_code(script)
+                    backend.play(script)
                     sync_state(script)
                 last_llm = time.time()
                 log(f"[replace] applied {name} ({len(state.layers)} layers, "
                     f"{state.bpm}bpm {state.key})")
                 continue
 
-            capfile = sp.capture(cap, CAPTURE_SECONDS)
+            capfile = backend.capture(cap, CAPTURE_SECONDS)
             if not capfile:
                 log(f"[tick {ticks}] capture failed, skipping")
                 continue
@@ -327,7 +328,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     last_var = time.time()
                     with apply_lock:
                         script = state.render()
-                        sp.run_code(script)
+                        backend.play(script)
                         sync_state(script)
                     log(f"[tick {ticks}] deterministic variation (no model call)")
                 else:
@@ -353,7 +354,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 if state.variation():
                     with apply_lock:
                         script = state.render()
-                        sp.run_code(script)
+                        backend.play(script)
                         sync_state(script)
                 continue
 
@@ -383,7 +384,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     last_llm = time.time()
                     continue
                 name = session.save_script(sess_path, script)
-                sp.run_code(script)
+                backend.play(script)
                 sync_state(script)
             last_llm = time.time()
             u = decided.get("_usage", {})
@@ -398,4 +399,4 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     finally:
         if control:
             control.set_state(running=False)
-        sp.shutdown()
+        backend.shutdown()

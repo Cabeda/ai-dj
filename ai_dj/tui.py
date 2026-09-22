@@ -26,8 +26,8 @@ def launch(a, provider, model, base_url, key):
         ctl.log(f"[tui] port {want} busy; using {port}")
     ctl.log(f"[tui] control server: http://127.0.0.1:{port}")
 
-    from .cli import make_sonic
-    sp = make_sonic(a, log=ctl.log)
+    from .cli import make_backend
+    backend = make_backend(a, log=ctl.log)
     ctl.set_state(running=True, provider=provider, model=model)
 
     def loop():
@@ -35,7 +35,7 @@ def launch(a, provider, model, base_url, key):
             live.run(key, model, a.env, new_seed=getattr(a, "seed", None),
                      session_id=getattr(a, "session_id", None),
                      prompt=getattr(a, "prompt", None),
-                     tick=getattr(a, "tick", 10), sonic=sp,
+                     tick=getattr(a, "tick", 10), backend=backend,
                      provider=provider, base_url=base_url,
                      reference=not getattr(a, "no_reference", False),
                      feedback_enabled=False,
@@ -84,6 +84,6 @@ def launch(a, provider, model, base_url, key):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=3)
-        sp.shutdown()
+        backend.shutdown()
         srv.shutdown()
         srv.server_close()
