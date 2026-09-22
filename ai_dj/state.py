@@ -29,6 +29,21 @@ REDUCE_ORDER = ["lead", "arp", "fx", "perc", "hats", "drone", "sub", "pad", "bas
 CORE_LAYERS = {"kick", "bass"}
 
 
+def _align_strudel_identity(code, key, mode):
+    """Rewrite a Strudel layer so its tonality matches the session.
+
+    The model is told to stay in key, but a seed or replace can still emit
+    `.scale("a:minor")` in an F-minor session. Rewrite the root:mode inside
+    `.scale(...)` and `.chord(...)` so the music cannot contradict the session.
+    """
+    def fix(m):
+        return f'{m.group(1)}"{key}:{mode}"'
+
+    code = re.sub(r'(\.scale\()"[^"]*"', fix, code)
+    code = re.sub(r'(\.chord\()"[^"]*"', fix, code)
+    return code
+
+
 def parse_layers(script, lang="sonic_pi"):
     """Split a rendered script into {layer_name: layer_code}.
 
@@ -54,6 +69,10 @@ def _parse_layers_strudel(script):
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(script)
         body = script[start:end].strip().rstrip(",").strip()
+        if i + 1 == len(matches):
+            # the last layer runs to the end of the script, which includes the
+            # stack's closing paren — drop it (and any blank lines before it)
+            body = re.sub(r"\n\s*\)\s*$", "", body).strip()
         if body:
             layers[m.group(1)] = body
     return layers
@@ -239,25 +258,37 @@ class DJState:
             lang=lang,
         )
 
-    def adopt_seed(self, ruby, hearing=None, lang=None):
-        """Replace layers with those parsed from a seed script, and adopt its
-        tempo/key/mode so the rest of the session stays consistent."""
+    def adopt_seed(self, ruby, hearing=None, lang=None, keep_identity=False):
+        """Replace layers with those parsed from a seed script.
+
+        keep_identity: keep this session's tempo/key/mode and only take the
+        seed's musical content. Used for prompt seeding and replace feedback,
+        where the session (or the archetype it was cast from) already has an
+        identity and the model should write music inside it, not rename it.
+        """
         lang = lang or self.lang
         layers = parse_layers(ruby or "", lang)
+        if layers and keep_identity and lang == "strudel":
+            # the model may still emit another key; make the music agree with
+            # the session so the set cannot contradict itself
+            layers = {n: _align_strudel_identity(c, self.key, self.mode)
+                      for n, c in layers.items()}
         if layers:
             self.layers = layers
-        m = re.search(r"(?:use_bpm|setcpm\()\s*(\d+)", ruby or "")
-        if m:
-            self.bpm = int(m.group(1))
+        if not keep_identity:
+            m = re.search(r"(?:use_bpm|setcpm\()\s*(\d+)", ruby or "")
+            if m:
+                self.bpm = int(m.group(1))
         if hearing:
-            k = (hearing.get("key") or "")
-            root = re.search(r"\b([a-gA-G])", k)
-            if root:
-                self.key = root.group(1).lower()
-            low = k.lower()
-            if "minor" in low:
-                self.mode = "minor"
-            elif "major" in low:
-                self.mode = "major"
+            if not keep_identity:
+                k = (hearing.get("key") or "")
+                root = re.search(r"\b([a-gA-G])", k)
+                if root:
+                    self.key = root.group(1).lower()
+                low = k.lower()
+                if "minor" in low:
+                    self.mode = "minor"
+                elif "major" in low:
+                    self.mode = "major"
             self.mood = hearing.get("mood", self.mood)
         self.last_action = "seed"

@@ -263,14 +263,18 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         try:
             decided = llm.seed_script(prompt, key, model=model, provider=provider,
                                       base_url=base_url, reference=reference,
-                                      reasoning=reasoning, lang=lang)
+                                      reasoning=reasoning, lang=lang,
+                                      session={"bpm": state.bpm, "key": state.key,
+                                               "mode": state.mode})
             if manual_rev[0] != seed_rev:
                 log("[seed] discarded — manual edit applied during generation")
             else:
                 ruby = decided.get("ruby", "")
                 if not valid(ruby):
                     raise ValueError("seed script failed ruby -c")
-                state.adopt_seed(ruby, decided.get("hearing"))
+                # keep the archetype's tempo/key/mode — the seed supplies
+                # musical content inside the session, not a new identity
+                state.adopt_seed(ruby, decided.get("hearing"), keep_identity=True)
                 script = state.render()
                 if not valid(script):
                     raise ValueError("rendered seed failed ruby -c")
@@ -279,7 +283,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
                 sync_state(script)
         except Exception as e:
-            log(f"[seed] failed ({e}); keeping random starter")
+            log(f"[seed] failed ({e}); keeping starter")
 
     if feedback_enabled and sys.stdin and sys.stdin.isatty():
         log("[feedback] type feedback + Enter anytime (e.g. 'more bass')")
@@ -310,7 +314,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 try:
                     decided = llm.seed_script(
                         replace_text, key, model=model, provider=provider,
-                        base_url=base_url, reference=reference, reasoning=reasoning, lang=lang)
+                        base_url=base_url, reference=reference, reasoning=reasoning, lang=lang,
+                        session={"bpm": state.bpm, "key": state.key,
+                                 "mode": state.mode})
                 except Exception as e:
                     log(f"[replace] ERROR: {e}")
                     continue
@@ -323,7 +329,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     last_llm = time.time()
                     continue
                 prev = (dict(state.layers), state.bpm, state.key, state.mode, state.mood)
-                state.adopt_seed(ruby, decided.get("hearing"))
+                # a replace keeps the session's tempo/key/mode too: the vibe
+                # changes, the set stays a set
+                state.adopt_seed(ruby, decided.get("hearing"), keep_identity=True)
                 script = state.render()
                 if not valid(script):
                     (state.layers, state.bpm, state.key,

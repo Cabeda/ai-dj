@@ -136,9 +136,61 @@ HARD RULES:
 """,
 }
 
+# Variant used when the session already has an identity (an archetype, or the
+# set being replaced): the model composes inside that tempo/key/mode.
+_SEED_ANCHORED = {
+    "sonic_pi": """You are the live-coding engine of a generative radio DJ.
+Write the music for an EXISTING live set, based on the vibe given.
 
-def _system(kind, lang=DEFAULT_LANG, reference=True):
-    prompts = _EVOLVE if kind == "evolve" else _SEED
+The session already has a fixed tempo, key and mode. Compose inside them.
+
+Return ONLY valid JSON, no markdown:
+{
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "ruby": "<the complete playable script>"
+}
+
+HARD RULES:
+- Do NOT set use_bpm; keep the session's tempo.
+- Keep the session's key and mode; stay in the current vibe.
+- Build one live_loop per element (kick, bass, hats, pad, lead, FX) and sync them.
+- Every musical choice gets a preceding "# why" comment.
+- Valid Sonic Pi DSL only. No text outside the JSON.
+
+# Sonic Pi Reference
+""",
+    "strudel": """You are the live-coding engine of a generative radio DJ.
+Write the music for an EXISTING set, based on the vibe given.
+
+The session already has a fixed tempo, key and mode. Compose inside them.
+
+Return ONLY valid JSON, no markdown:
+{
+  "hearing": {"tempo_bpm": 0, "key": "", "chords": [], "energy": "", "mood": "", "structure": ""},
+  "decision": {"action": "", "why": ""},
+  "ruby": "<the complete playable Strudel script>"
+}
+
+HARD RULES:
+- Do NOT call setcpm; keep the session's tempo.
+- Keep the session's key and mode; stay in the current vibe.
+- Build the set as ONE expression: stack(...) with one pattern per layer
+  (kick, bass, hats, pad, lead, FX).
+- Choose timbres only from the instrument palette.
+- Every musical choice gets a preceding "// why" comment.
+- Valid Strudel only. No $: labels. No text outside the JSON.
+
+# Strudel Reference
+""",
+}
+
+
+def _system(kind, lang=DEFAULT_LANG, reference=True, anchored=False):
+    if anchored:
+        prompts = _SEED_ANCHORED
+    else:
+        prompts = _EVOLVE if kind == "evolve" else _SEED
     base = prompts.get(lang, prompts[DEFAULT_LANG])
     if not reference:
         return base  # without the (large) reference
@@ -230,15 +282,23 @@ def _parse(data, model):
 
 def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
                 provider="go", base_url=None, reference=True, reasoning="none",
-                lang=DEFAULT_LANG):
-    """Generate the first full script for a vibe prompt (one-time call)."""
+                lang=DEFAULT_LANG, session=None):
+    """Write the music for a vibe prompt.
+
+    session: an optional {bpm, key, mode} identity to compose inside (an
+    archetype the session was cast from). Without it the model chooses freely.
+    """
+    anchored = bool(session)
+    system = _system("seed", lang, reference, anchored=anchored)
+    user = f'Write the music for a live set with this vibe: "{prompt}".'
+    if anchored:
+        user += (f"\n\nSession identity (compose inside it): "
+                 f"{session['bpm']}bpm, key {session['key']}, {session['mode']}.")
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system("seed", lang, reference)},
-            {"role": "user", "content":
-                f'Create the first {"Strudel" if lang == "strudel" else "Sonic Pi"} '
-                f'script for a live set with this vibe: "{prompt}".'},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
         "max_tokens": 16000,
         "temperature": 0.8,
