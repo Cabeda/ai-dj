@@ -249,7 +249,9 @@ def listen_and_decide(audio_path, key, model=DEFAULT_MODEL, session_id=None,
 
 
 def _extract_json(text):
-    decoder = json.JSONDecoder()
+    # strict=False tolerates raw control characters (e.g. unescaped newlines
+    # inside the "ruby" string), which models emit often.
+    decoder = json.JSONDecoder(strict=False)
     idx = text.find("{")
     if idx < 0:
         raise ValueError(f"no JSON in model reply: {text[:300]}")
