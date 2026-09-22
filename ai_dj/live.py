@@ -200,7 +200,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
 
     # show the starter in the TUI immediately — boot can take ~15s
     script = state.render()
-    session.save_script(sess_path, script)
+    session.save_script(sess_path, script, lang=lang)
     sync_state(script)
 
     backend.boot()
@@ -224,7 +224,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 state.layers = layers
             state.last_action = "manual edit"
             script = manual
-            session.save_script(sess_path, script)
+            session.save_script(sess_path, script, lang=lang)
             backend.play(script)
             sync_state(script)
             prev_sig = None
@@ -278,7 +278,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 script = state.render()
                 if not valid(script):
                     raise ValueError("rendered seed failed ruby -c")
-                name = session.save_script(sess_path, script)
+                name = session.save_script(sess_path, script, lang=lang)
                 backend.play(script)
                 log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
                 sync_state(script)
@@ -341,7 +341,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     last_llm = time.time()
                     continue
                 with apply_lock:
-                    name = session.save_script(sess_path, script)
+                    name = session.save_script(sess_path, script, lang=lang)
                     backend.play(script)
                     sync_state(script)
                 last_llm = time.time()
@@ -428,7 +428,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     log(f"[llm] rendered script invalid; rolled back")
                     last_llm = time.time()
                     continue
-                name = session.save_script(sess_path, script)
+                name = session.save_script(sess_path, script, lang=lang)
                 backend.play(script)
                 sync_state(script)
             last_llm = time.time()
