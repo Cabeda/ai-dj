@@ -36,7 +36,7 @@ def _i(name, family, **realisations):
 PALETTE = (
     # -- drums --------------------------------------------------------------
     # Real drum-machine kits (tidal-drum-machines) beat one-shot samples.
-    _i("kick", "drums", sonic_pi=":bd_haus", strudel="bd"),
+    _i("kick", "drums", sonic_pi=":bd_haus", strudel="RolandTR909_bd"),
     _i("kick_909", "drums", strudel="RolandTR909_bd"),
     _i("kick_808", "drums", strudel="RolandTR808_bd"),
     _i("snare", "drums", sonic_pi=":drum_snare_hard", strudel="RolandTR909_sd"),

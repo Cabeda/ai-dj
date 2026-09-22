@@ -1,0 +1,3 @@
+// Bach, Prelude in C (BWV 846) — the opening broken-chord figure, one chord
+// per cycle. Public-domain score; this is our symbolic replication target.
+note("<[c3 e3 g3 c4 e4 g4 c4 e4] [b2 d3 g3 b3 d4 g4 b3 d4] [a2 c3 e3 a3 c4 e4 c4 e4] [g2 b2 d3 g3 b3 d3 b3 d3]>")

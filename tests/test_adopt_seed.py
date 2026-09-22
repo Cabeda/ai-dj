@@ -8,7 +8,7 @@ from ai_dj.strudel_templates import build
 
 class AdoptSeedTests(unittest.TestCase):
     def setUp(self):
-        self.layers, self.info = build("harp_choir", key="f", mode="minor", bpm=72)
+        self.layers, self.info = build("harp_strings", key="f", mode="minor", bpm=72)
         self.state = DJState(bpm=72, key="f", mode="minor",
                              layers=self.layers, lang="strudel")
 

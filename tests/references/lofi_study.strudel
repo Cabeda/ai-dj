@@ -1,0 +1,6 @@
+// Lofi study style target: soft chords, low register, gentle movement.
+// Not a transcription — a description of the style's harmony and density.
+stack(
+  chord("<Dm9 Dm9 Cmaj7 Bb>").voicing().s("piano").gain(0.3).room(0.4).slow(4),
+  note("d2").s("sine").gain(0.4).slow(2)
+)

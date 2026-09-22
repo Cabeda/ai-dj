@@ -49,8 +49,6 @@ _LAYER_BODIES = {
     # classical
     "pad":      'note("[{root}3,{third}3,{fifth}3]").s("gm_string_ensemble_1")'
                 '.attack(1.2).release(3).gain(0.32).slow(4)',
-    "choir":    'note("[{root}4,{third}4,{fifth}4]").s("gm_choir_aahs")'
-                '.attack(1.5).release(4).gain(0.25).slow(8)',
     "violin":   'n("0 2 4 7 4 2").scale("{key}:{mode}").s("gm_violin")'
                 '.attack(0.15).release(0.9).gain(0.3)',
     "cello":    'n("0 2 4 2").scale("{key}:{mode}").s("gm_cello")'
@@ -81,6 +79,8 @@ _EXTRA = {
     "vinyl":    's("white*16").gain(0.02).hpf(2000)',
     "strings":  'note("[{root}3,{third}3,{fifth}3]").s("gm_string_ensemble_1")'
                 '.attack(2).release(5).gain(0.22).slow(8)',
+    "strings_trem": 'note("[{root}3,{third}3,{fifth}3]").s("gm_tremolo_strings")'
+                '.attack(1.5).release(4).gain(0.2).slow(8)',
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
                 '.attack(0.1).release(1).gain(0.25)',
     "folkharp": 'n("0 4 2 5 3 7").scale("{key}:{mode}").s("folkharp")'
@@ -153,9 +153,9 @@ _ARCHETYPES = {
     # classical
     "string_quartet": _arch("strings", "cello", "violin", "pizz"),
     "chamber":        _arch("cello", "piano", "violin"),
-    "orchestral":     _arch("strings", "choir", "violin", "timpani", "flute"),
+    "orchestral":     _arch("strings", "strings_trem", "violin", "timpani", "flute"),
     "solo_piano":     _arch("piano", "harp"),
-    "harp_choir":     _arch("choir", "folkharp", "flute"),
+    "harp_strings":   _arch("harp", "strings", "flute"),
     "marimba_room":   _arch("marimba", "sub", "vibes", "vinyl"),
 }
 
@@ -187,7 +187,7 @@ _ARCHETYPE_BPM = {
     "chamber": (66, 92),
     "orchestral": (58, 80),
     "solo_piano": (60, 90),
-    "harp_choir": (64, 88),
+    "harp_strings": (64, 88),
 }
 
 # Modes that suit the archetype's mood.
@@ -207,7 +207,7 @@ _ARCHETYPE_MODES = {
     "chamber": ["major", "minor", "dorian"],
     "orchestral": ["minor", "major", "aeolian"],
     "solo_piano": ["major", "minor", "dorian"],
-    "harp_choir": ["major", "minor", "aeolian"],
+    "harp_strings": ["major", "minor", "aeolian"],
 }
 
 

@@ -110,3 +110,21 @@ class StrudelStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NonVocalTests(unittest.TestCase):
+    """The station replaces non-vocal radio (lofi girl et al), so no archetype
+    may use a voice patch: vocals pull attention away from the work.
+    """
+
+    VOCAL_PATCHES = ("choir", "voice_oohs", "gm_choir_aahs", "gm_voice_oohs")
+
+    def test_no_archetype_uses_a_voice_patch(self):
+        offenders = []
+        for name in st.ARCHETYPE_NAMES:
+            layers, _ = st.build(name, seed=1)
+            joined = " ".join(layers.values())
+            for patch in self.VOCAL_PATCHES:
+                if patch in joined:
+                    offenders.append((name, patch))
+        self.assertEqual(offenders, [], f"vocal patches in archetypes: {offenders}")

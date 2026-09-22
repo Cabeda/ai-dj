@@ -49,7 +49,7 @@ class PaletteTests(unittest.TestCase):
         ins = palette.resolve("kick")
         self.assertEqual(ins.family, "drums")
         self.assertEqual(palette.realisation("kick", palette.SONIC_PI), ":bd_haus")
-        self.assertEqual(palette.realisation("kick", palette.STRUDEL), "bd")
+        self.assertEqual(palette.realisation("kick", palette.STRUDEL), "RolandTR909_bd")
         with self.assertRaises(KeyError):
             palette.resolve("nope")
         with self.assertRaises(KeyError):

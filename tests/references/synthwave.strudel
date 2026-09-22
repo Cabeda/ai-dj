@@ -1,0 +1,2 @@
+// Synthwave style target: minor arpeggio, steady 8ths, bright lead.
+note("<[a2 a3 c3 e3] [f2 f3 a3 c4] [g2 g3 b3 d4] [e2 e3 g3 b3]>").s("sawtooth").gain(0.3).fast(2)
