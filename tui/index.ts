@@ -1,22 +1,47 @@
-// ai-dj TUI — shows the live Sonic Pi script (editable), queues feedback.
+// ai-dj TUI — shows the live set (editable), queues feedback.
 import {
   BoxRenderable,
   TextRenderable,
   TextareaRenderable,
   createCliRenderer,
+  createClipboard,
+  createHostClipboard,
+  createRendererClipboardAdapter,
 } from "@opentui/core"
 
 const URL = process.env.AI_DJ_URL ?? "http://127.0.0.1:8765"
+const LOG_PATH = process.env.AI_DJ_LOG ?? ""
 
-// Minimal, audible starting point. Keep in sync with default_layers() in
-// ai_dj/templates.py. The server replaces this on the first poll.
-const DEFAULT_SCRIPT = `use_bpm 90
+// The TUI owns the terminal, so anything it prints is invisible. Mirror errors
+// to the run's log file (AI_DJ_LOG, set by the launcher) so a failed run can be
+// debugged afterwards.
+function logLine(tag: string, text: string) {
+  if (!LOG_PATH || !text) return
+  try {
+    const stamp = new Date().toTimeString().slice(0, 8)
+    const body = text
+      .split("\n")
+      .map((l) => `${stamp} ${tag} ${l}`)
+      .join("\n")
+    require("fs").appendFileSync(LOG_PATH, body + "\n")
+  } catch {}
+}
 
-# minimal starting point - edit freely, then shift+enter to apply
-live_loop :kick do
-  sample :bd_haus, amp: 1.0
-  sleep 1
-end`
+process.on("uncaughtException", (err) => {
+  logLine("[tui:uncaught]", err?.stack ?? String(err))
+  process.exit(1)
+})
+process.on("unhandledRejection", (reason) => {
+  logLine("[tui:unhandled]", reason instanceof Error ? reason.stack ?? reason.message : String(reason))
+})
+
+// Minimal, audible starting point (Strudel — the default backend). The server
+// replaces this on the first poll. Edit freely, then shift+enter to apply.
+const DEFAULT_SCRIPT = `setcpm(90/4)
+
+stack(
+  s("bd*4").gain(0.85)
+)`
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: false,
@@ -113,7 +138,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "tab focus  ·  shift+enter apply  ·  ctrl+k commands  ·  ctrl+q quit",
+  content: "shift+enter apply  ·  drag select + ctrl+c copy  ·  ctrl+k commands  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -129,7 +154,7 @@ const scriptPanel = new BoxRenderable(renderer, {
   minWidth: 0,
   borderStyle: "rounded",
   borderColor: "#2a3138",
-  title: " Sonic Pi script ",
+  title: " live set ",
   titleAlignment: "left",
   flexDirection: "column",
   overflow: "hidden",
@@ -223,7 +248,7 @@ let paletteOpen = false
 let paletteQuery = ""
 let paletteIndex = 0
 
-const SCRIPT_TITLE = " Sonic Pi script "
+const SCRIPT_TITLE = " live set "
 const CURSOR = "▌"
 
 function setScriptText(text: string) {
@@ -236,7 +261,7 @@ function setScriptText(text: string) {
 }
 
 function setScriptTitle(suffix?: string) {
-  scriptPanel.title = suffix ? ` Sonic Pi script · ${suffix} ` : SCRIPT_TITLE
+  scriptPanel.title = suffix ? ` live set · ${suffix} ` : SCRIPT_TITLE
 }
 
 function setLog(text: string) {
@@ -263,6 +288,43 @@ async function post(path: string, body: unknown) {
   }
 }
 
+// -- clipboard --------------------------------------------------------------
+// Host clipboard (native) with an OSC 52 terminal fallback, so copy works both
+// locally and over SSH/remote terminals.
+const clipboard = createClipboard({
+  host: createHostClipboard(),
+  terminal: createRendererClipboardAdapter(renderer),
+})
+
+async function copyText(text: string, label: string) {
+  if (!text.trim()) {
+    status.content = `ai-dj  nothing to copy (${label})`
+    return
+  }
+  try {
+    await clipboard.writeText(text, { destination: "best-available" })
+    const lines = text.split("\n").length
+    status.content = `ai-dj  copied ${label} (${lines} line${lines === 1 ? "" : "s"})`
+  } catch {
+    status.content = `ai-dj  could not copy ${label}`
+  }
+}
+
+// The focused editor's selection, else the whole focused editor, else the log.
+function copySelection() {
+  if (scriptArea.hasSelection()) {
+    void copyText(scriptArea.getSelectedText(), "script selection")
+  } else if (feedback.hasSelection()) {
+    void copyText(feedback.getSelectedText(), "feedback selection")
+  } else if (scriptArea.focused) {
+    void copyText(scriptArea.plainText, "script")
+  } else if (feedback.focused) {
+    void copyText(feedback.plainText, "feedback")
+  } else {
+    void copyText(lastLog, "log")
+  }
+}
+
 function applyScript() {
   if (animTimer) cancelAnim(true)
   const ruby = scriptArea.plainText
@@ -281,6 +343,10 @@ interface PaletteCommand {
 
 const paletteCommands: PaletteCommand[] = [
   { label: "Apply script", run: () => applyScript() },
+  { label: "Copy script", run: () => void copyText(scriptArea.plainText, "script") },
+  { label: "Copy log", run: () => void copyText(lastLog, "log") },
+  { label: "Copy script + log", run: () => void copyText(`${scriptArea.plainText}\n\n--- log ---\n${lastLog}`, "script + log") },
+  { label: "Copy log file path", run: () => void copyText(LOG_PATH, "log file path") },
   {
     label: "Reset to default script",
     run: () => {
@@ -399,6 +465,8 @@ function stopTimers() {
 function destroyAll() {
   if (destroyed) return
   stopTimers()
+  // clipboard.dispose() is async but must not block quitting; fire and forget.
+  void clipboard.dispose().catch(() => {})
   // renderer.destroy() can hang on an active render pass; leave immediately.
   process.exit(0)
 }
@@ -469,13 +537,12 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
     applyScript()
-  } else if (
-    key.ctrl &&
-    (key.name === "q" ||
-      key.name === "c" ||
-      key.sequence === "\u0011" ||
-      key.sequence === "\u0003")
-  ) {
+  } else if (key.ctrl && (key.name === "y" || key.sequence === "\u0019")) {
+    copySelection()
+  } else if (key.ctrl && (key.name === "c" || key.sequence === "\u0003")) {
+    // a selection means "copy"; otherwise copy the focused pane
+    copySelection()
+  } else if (key.ctrl && (key.name === "q" || key.sequence === "\u0011")) {
     destroyAll()
   } else if (key.name === "tab") {
     scriptFocused = !scriptFocused

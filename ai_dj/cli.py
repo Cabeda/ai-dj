@@ -34,8 +34,18 @@ def cmd_list(_a):
 
 
 def cmd_dry(a):
-    script, info = templates.random_starter(seed=a.seed)
-    print(script)
+    if getattr(a, "backend", "strudel") == "sonic_pi":
+        script, _info = templates.random_starter(seed=a.seed)
+        print(script)
+        return
+    from .state import DJState
+    from .strudel_templates import archetype_name, build
+
+    name = archetype_name(a.seed)
+    layers, info = build(name, seed=a.seed)
+    state = DJState(bpm=info["bpm"], key=info["key"], mode=info["mode"],
+                    layers=layers, lang="strudel")
+    print(state.render())
 
 
 def cmd_models(a):
@@ -91,21 +101,32 @@ def resolve_llm(a):
 
 
 def make_backend(a, log=print):
-    """Build the sound backend for this run (Sonic Pi for the terminal)."""
-    backend = SonicPiBackend(log=log)
-    if getattr(a, "output", None):
-        backend.audio_output = a.output
-        log(f"[audio] pinned output device: {backend.audio_output}")
-    else:
-        from .audio import active_output
-        act = active_output()
-        if act:
-            log(f"[audio] following system default output: {act['name']} ({act['transport']})")
-    return backend
+    """Build the sound backend for this run.
+
+    Default is Strudel (headless, any platform, classical palette).
+    `--backend sonic_pi` opts into the Sonic Pi daemon instead.
+    """
+    choice = getattr(a, "backend", None) or "strudel"
+    if choice == "sonic_pi":
+        backend = SonicPiBackend(log=log)
+        if getattr(a, "output", None):
+            backend.audio_output = a.output
+            log(f"[audio] pinned output device: {backend.audio_output}")
+        else:
+            from .audio import active_output
+            act = active_output()
+            if act:
+                log(f"[audio] following system default output: {act['name']} ({act['transport']})")
+        return backend
+    from .backend import make_strudel_backend
+    return make_strudel_backend(log=log)
 
 
 def run_live(a, provider, model, base_url, key):
-    backend = make_backend(a)
+    if not getattr(a, "dry", False):
+        backend = make_backend(a)
+    else:
+        backend = None  # dry runs make no sound — don't start a host
     print(f"[llm] provider={provider} model={model}")
     return run(key, model, a.env, new_seed=getattr(a, "seed", None),
                session_id=getattr(a, "session_id", None),
@@ -152,6 +173,8 @@ def cmd_probe(a):
 
 
 def _add_llm_flags(p, model_default=None):
+    p.add_argument("--backend", default="strudel", choices=["strudel", "sonic_pi"],
+                   help="sound backend (default strudel; sonic_pi needs the Sonic Pi app)")
     p.add_argument("--model", default=model_default,
                    help="model id (default: provider default; for --local, "
                         "omit to list loaded models)")
@@ -163,7 +186,7 @@ def _add_llm_flags(p, model_default=None):
                    choices=["none", "low", "medium", "high"],
                    help="reasoning effort (default none — cheapest)")
     p.add_argument("--no-reference", action="store_true",
-                   help="drop the Sonic Pi reference from the prompt (lower context)")
+                   help="drop the backend's language reference from the prompt (lower context)")
     p.add_argument("--no-feedback", action="store_true",
                    help="disable reading feedback from stdin")
     p.add_argument("--env", default=os.path.expanduser("~/env"),
@@ -171,7 +194,7 @@ def _add_llm_flags(p, model_default=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="ai-dj", description="generative radio DJ on Sonic Pi")
+    ap = argparse.ArgumentParser(prog="ai-dj", description="generative radio DJ (Strudel by default)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_new = sub.add_parser("new", help="start a fresh random session")

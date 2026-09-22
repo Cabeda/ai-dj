@@ -195,7 +195,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             + (f" | guide: {prompt}" if prompt else ""))
 
     if dry:
-        log("[dry] skipping Sonic Pi + audio")
+        log("[dry] skipping audio")
         return sess_path
 
     # show the starter in the TUI immediately — boot can take ~15s

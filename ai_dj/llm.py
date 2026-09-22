@@ -237,7 +237,8 @@ def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
         "messages": [
             {"role": "system", "content": _system("seed", lang, reference)},
             {"role": "user", "content":
-                f'Create the first Sonic Pi script for a live set with this vibe: "{prompt}".'},
+                f'Create the first {"Strudel" if lang == "strudel" else "Sonic Pi"} '
+                f'script for a live set with this vibe: "{prompt}".'},
         ],
         "max_tokens": 16000,
         "temperature": 0.8,
