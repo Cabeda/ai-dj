@@ -113,3 +113,39 @@ class StdioBackendTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StdioBackendShutdownTests(unittest.TestCase):
+    """Quitting while a capture is in flight must read as "leaving", not as a
+    failure — the DJ loop and shutdown race by design."""
+
+    def _backend(self):
+        return StdioBackend([sys.executable, HOST], name="strudel", log=lambda *a: None)
+
+    def test_capture_after_shutdown_raises_closed(self):
+        from ai_dj.backend import BackendClosed
+
+        be = self._backend()
+        try:
+            be.boot(timeout=5)
+        finally:
+            be.shutdown()
+        with self.assertRaises(BackendClosed):
+            be.capture("/tmp/ai_dj_closed.wav", 1)
+
+    def test_play_and_stop_after_shutdown_are_noops(self):
+        be = self._backend()
+        try:
+            be.boot(timeout=5)
+        finally:
+            be.shutdown()
+        # must not raise
+        be.play("stack(s('bd'))")
+        be.stop()
+        be.set_volume(0.5)
+
+    def test_shutdown_is_idempotent(self):
+        be = self._backend()
+        be.boot(timeout=5)
+        be.shutdown()
+        be.shutdown()  # must not raise

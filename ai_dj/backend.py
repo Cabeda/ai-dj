@@ -38,6 +38,14 @@ from abc import ABC, abstractmethod
 BACKEND_NAME = "abstract"
 
 
+class BackendClosed(RuntimeError):
+    """Raised when the backend is asked to work after shutdown began.
+
+    Shutdown races the DJ loop by design (the loop may be mid-capture when the
+    user quits), so callers treat this as "we are leaving", not as a fault.
+    """
+
+
 class SoundBackend(ABC):
     """The seam between the DJ logic and the sound engine."""
 
@@ -149,6 +157,7 @@ class StdioBackend(SoundBackend):
         self.proc = None
         self._events = []
         self._dead = False
+        self._closed = False
         self._cv = threading.Condition()
 
     # -- process plumbing ---------------------------------------------------
@@ -184,6 +193,8 @@ class StdioBackend(SoundBackend):
             self._cv.notify_all()
 
     def _send(self, obj):
+        if self._closed:
+            raise BackendClosed("backend is shutting down")
         if self.proc is None or self.proc.stdin is None:
             raise RuntimeError("stdio backend not started")
         self.proc.stdin.write(json.dumps(obj) + "\n")
@@ -201,6 +212,8 @@ class StdioBackend(SoundBackend):
                     if kind == "error":
                         self._events.pop(i)
                         raise RuntimeError(f"host error: {event.get('message', 'unknown')}")
+                if self._closed:
+                    raise BackendClosed("backend is shutting down")
                 if self._dead:
                     raise RuntimeError("stdio backend host exited")
                 remaining = deadline - time.time()
@@ -217,18 +230,28 @@ class StdioBackend(SoundBackend):
         return self
 
     def play(self, script: str) -> None:
+        if self._closed:
+            return  # leaving; a late edit is not an error
         self._send({"op": "play", "script": script})
 
     def stop(self) -> None:
+        if self._closed:
+            return
         self._send({"op": "stop"})
 
     def set_volume(self, volume: float) -> None:
+        if self._closed:
+            return
         self._send({"op": "set_volume", "volume": float(volume)})
 
     def capture(self, path: str, seconds: float):
+        if self._closed:
+            raise BackendClosed("backend is shutting down")
         self._send({"op": "capture", "path": path, "seconds": float(seconds)})
         try:
             event = self._wait("captured", seconds + 25)
+        except BackendClosed:
+            raise
         except RuntimeError as e:
             # host reported a render failure — treat as no capture
             self.log(f"[stdio] capture failed: {e}")
@@ -238,6 +261,9 @@ class StdioBackend(SoundBackend):
         return event.get("path", path)
 
     def shutdown(self) -> None:
+        # mark closed first: the DJ loop may be mid-capture, and that race is
+        # expected, not a failure
+        self._closed = True
         if self.proc is None:
             return
         try:

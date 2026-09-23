@@ -54,6 +54,10 @@ class ReferenceReplicationTests(unittest.TestCase):
         score, result = self._score("mozart_nachtmusik", "mozart_nachtmusik")
         self.assertGreaterEqual(score, 0.95, f"Mozart replication scored {score}: {result}")
 
+    def test_fur_elise_matches(self):
+        score, result = self._score("fur_elise", "fur_elise")
+        self.assertGreaterEqual(score, 0.95, f"Für Elise replication scored {score}: {result}")
+
     def test_bach_is_not_mozart(self):
         # the scorer must discriminate, or a high score means nothing
         bach = similarity.REFERENCE_PIECES["bach_prelude_c"]["notes"]

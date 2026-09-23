@@ -15,13 +15,14 @@ feedback and manual script edits to the TUI.
 
 import math
 import os
+import shutil
 import struct
 import sys
 import threading
 import time
 
 from . import llm, session
-from .backend import SonicPiBackend
+from .backend import BackendClosed, SonicPiBackend
 from .state import DJState, parse_layers
 from .templates import default_layers, random_layers
 from .strudel_templates import build as strudel_build, archetype_name
@@ -146,7 +147,8 @@ def _diff(a, b):
 
 def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         tick=TICK_SECONDS, dry=False, backend=None, provider="go", base_url=None,
-        reference=True, feedback_enabled=True, reasoning="none", control=None):
+        reference=True, feedback_enabled=True, reasoning="none", control=None,
+        record_dir=None):
     backend = backend or SonicPiBackend()
     lang = "strudel" if getattr(backend, "name", "") == "strudel" else "sonic_pi"
     valid = valid_strudel if lang == "strudel" else valid_ruby
@@ -193,6 +195,12 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         sess_path = session.create_session(info)
         log(f"[session] new session: {os.path.basename(sess_path)}"
             + (f" | guide: {prompt}" if prompt else ""))
+
+    if record_dir == "auto":
+        record_dir = os.path.join(sess_path, "audio")
+    if record_dir:
+        os.makedirs(record_dir, exist_ok=True)
+        log(f"[record] saving captures to {record_dir}")
 
     if dry:
         log("[dry] skipping audio")
@@ -349,10 +357,21 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     f"{state.bpm}bpm {state.key})")
                 continue
 
-            capfile = backend.capture(cap, CAPTURE_SECONDS)
+            try:
+                capfile = backend.capture(cap, CAPTURE_SECONDS)
+            except BackendClosed:
+                # the user quit while this capture was in flight; leaving is
+                # the expected outcome, not a failure
+                log("[bye] backend closed")
+                break
             if not capfile:
                 log(f"[tick {ticks}] capture failed, skipping")
                 continue
+            if record_dir and capfile:
+                try:
+                    shutil.copy(capfile, os.path.join(record_dir, f"tick_{ticks:04d}.wav"))
+                except OSError:
+                    pass
             sig = _signature(capfile)
             changed = _diff(prev_sig, sig) if prev_sig is not None else 0.0
             prev_sig = sig

@@ -35,56 +35,60 @@ def _mode():
 
 _LAYER_BODIES = {
     # electronic
-    "kick":     's("RolandTR909_bd*4").gain(0.85)',
-    "kick808":  's("RolandTR808_bd*4").gain(0.85)',
-    "hat":      's("RolandTR909_hh*8").gain(rand.range(0.15,0.4)).pan(sine.range(0.3,0.7).slow(4))',
-    "shaker":   's("shaker_large*16").gain(rand.range(0.1,0.3))',
-    "noise_fx": 's("white").gain(0.04).lpf(perlin.range(600,2400).slow(8))',
+    "kick":     's("RolandTR909_bd*4").gain(rand.range(0.7,0.9)).room(0.08)',
+    "kick808":  's("RolandTR808_bd*4").gain(rand.range(0.7,0.9)).room(0.08)',
+    "hat":      's("RolandTR909_hh*8").gain(rand.range(0.1,0.3)).pan(sine.range(0.3,0.7).slow(4)).room(0.15)',
+    "shaker":   's("shaker_large*16").gain(rand.range(0.08,0.25)).room(0.1)',
+    "noise_fx": 's("white").gain(0.03).lpf(perlin.range(600,2400).slow(8)).room(0.5)',
     "acid":     'n("0 0 3 5 0 7 5 3").scale("{key}:{mode}").s("sawtooth")'
-                '.lpf(sine.range(300,1400).slow(4)).gain(0.4)',
+                '.lpf(sine.range(300,1400).slow(4)).gain(rand.range(0.3,0.5)).room(0.2)',
     "lead":     'n("0 2 4 7").scale("{key}:{mode}").s("sawtooth")'
-                '.lpf(sine.range(700,2200).slow(6)).gain(0.28)',
+                '.lpf(sine.range(700,2200).slow(6)).gain(rand.range(0.2,0.35))'
+                '.room(0.3).superimpose(x => x.gain(0.3).late(0.015).pan(0.3))',
     "arp":      'n("0 2 4 7 4 2").scale("{key}:{mode}").s("triangle")'
-                '.gain(0.22).fast(2)',
+                '.gain(rand.range(0.18,0.28)).room(0.2).fast(2)',
     # classical
     "pad":      'note("[{root}3,{third}3,{fifth}3]").s("gm_string_ensemble_1")'
-                '.attack(1.2).release(3).gain(0.32).slow(4)',
+                '.attack(1.2).release(4).gain(rand.range(0.25,0.38)).room(0.55).slow(4)'
+                '.superimpose(x => x.gain(0.35).late(0.012).pan(0.3))',
     "violin":   'n("0 2 4 7 4 2").scale("{key}:{mode}").s("gm_violin")'
-                '.attack(0.15).release(0.9).gain(0.3)',
+                '.attack(0.15).release(1).gain(rand.range(0.25,0.35)).room(0.4)',
     "cello":    'n("0 2 4 2").scale("{key}:{mode}").s("gm_cello")'
-                '.attack(0.2).release(1.2).gain(0.35).slow(2)',
-    "pizz":     'note("[{root}2,{fifth}2]").s("gm_pizzicato_strings").gain(0.3)',
+                '.attack(0.3).release(1.5).gain(rand.range(0.3,0.4)).room(0.35).slow(2)',
+    "pizz":     'note("[{root}2,{fifth}2]").s("gm_pizzicato_strings").gain(rand.range(0.25,0.35)).room(0.3)',
     "harp":     'n("0 4 2 5 3 7").scale("{key}:{mode}").s("harp")'
-                '.gain(0.45).slow(2)',
+                '.gain(rand.range(0.35,0.5)).room(0.4).slow(2)',
     "piano":    'chord("<{key^}{q7} {key^}{q7} {key^}M7 {key^}{q7}>").voicing()'
-                '.s("piano").gain(0.3).slow(4)',
+                '.s("piano").gain(rand.range(0.22,0.35)).room(0.4).slow(4)',
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
-                '.attack(0.1).release(1).gain(0.25)',
-    "timpani":  'note("{root}1").s("timpani").gain(0.9).slow(4)',
+                '.attack(0.1).release(1.2).gain(rand.range(0.2,0.3)).room(0.4)',
+    "timpani":  'note("{root}1").s("timpani").gain(rand.range(0.8,1.0)).room(0.5).slow(4)',
 }
 
 
 # Additional layer bodies used by the archetypes below.
 _EXTRA = {
     "padrich":  'note("[{root}3,{third}3,{fifth}3,{root}4]").s("sawtooth")'
-                '.attack(2).release(4).lpf(perlin.range(400,1600).slow(16))'
-                '.gain(0.18).slow(8)',
-    "sub":      'note("{root}1").s("sine").gain(0.5).slow(2)',
+                '.attack(2).release(5).lpf(perlin.range(400,1600).slow(16))'
+                '.gain(rand.range(0.14,0.22)).room(0.6).slow(8)'
+                '.superimpose(x => x.gain(0.35).late(0.012).pan(0.3))',
+    "sub":      'note("{root}1").s("sine").gain(rand.range(0.4,0.6)).slow(2)',
     "rhodes":   'chord("<{key^}{q9} {key^}{q9} {key^}{q7} {key^}{q9}>").voicing()'
-                '.s("gm_clavinet").gain(0.25).room(0.4).slow(4)',
+                '.s("gm_clavinet").gain(rand.range(0.2,0.3)).room(0.4).slow(4)',
     "vibes":    'n("0 4 2 5 7 4").scale("{key}:{mode}").s("vibraphone")'
-                '.gain(0.35).room(0.3).slow(2)',
+                '.gain(rand.range(0.28,0.4)).room(0.35).slow(2)',
     "marimba":  'n("0 2 4 7").scale("{key}:{mode}").s("marimba")'
-                '.gain(0.5).slow(2)',
-    "vinyl":    's("white*16").gain(0.02).hpf(2000)',
+                '.gain(rand.range(0.4,0.6)).room(0.3).slow(2)',
+    "vinyl":    's("white*16").gain(rand.range(0.01,0.03)).hpf(2000)',
     "strings":  'note("[{root}3,{third}3,{fifth}3]").s("gm_string_ensemble_1")'
-                '.attack(2).release(5).gain(0.22).slow(8)',
+                '.attack(2).release(6).gain(rand.range(0.18,0.28)).room(0.55).slow(8)'
+                '.superimpose(x => x.gain(0.35).late(0.012).pan(0.3))',
     "strings_trem": 'note("[{root}3,{third}3,{fifth}3]").s("gm_tremolo_strings")'
-                '.attack(1.5).release(4).gain(0.2).slow(8)',
+                '.attack(1.5).release(5).gain(rand.range(0.16,0.24)).room(0.55).slow(8)',
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
-                '.attack(0.1).release(1).gain(0.25)',
+                '.attack(0.1).release(1.2).gain(rand.range(0.2,0.3)).room(0.4)',
     "folkharp": 'n("0 4 2 5 3 7").scale("{key}:{mode}").s("folkharp")'
-                '.gain(0.4).room(0.35).slow(2)',
+                '.gain(rand.range(0.3,0.45)).room(0.4).slow(2)',
     "sax":      'n("4 2 0 2").scale("{key}:{mode}").s("sax").gain(0.3)',
 }
 _LAYER_BODIES.update(_EXTRA)

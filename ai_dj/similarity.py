@@ -44,6 +44,16 @@ REFERENCE_PIECES = {
             72, 72, 72, 67, 72, 76, 72, 67,  # C  C  C  G  C  E  C  G
         ],
     },
+    # Beethoven, Für Elise — the opening theme (Bagatelle No. 25 in A minor).
+    "fur_elise": {
+        "composer": "Ludwig van Beethoven",
+        "work": "Für Elise (Bagatelle No. 25 in A minor)",
+        "notes": [
+            76, 75, 76, 75, 76, 71, 74, 72, 69,   # E5 D#5 E5 D#5 E5 B4 D5 C5 A4
+            60, 64, 69, 71,                        # C4 E4 A4 B4
+            64, 68, 71, 72,                        # E4 G#4 B4 C5
+        ],
+    },
 }
 
 # Style targets for the electronic archetypes. There is no canonical score, so

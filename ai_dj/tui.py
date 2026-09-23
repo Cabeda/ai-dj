@@ -101,7 +101,8 @@ def launch(a, provider, model, base_url, key):
                      provider=provider, base_url=base_url,
                      reference=not getattr(a, "no_reference", False),
                      feedback_enabled=False,
-                     reasoning=getattr(a, "reasoning", "none"), control=ctl)
+                     reasoning=getattr(a, "reasoning", "none"), control=ctl,
+                      record_dir=getattr(a, "record", None))
         except Exception as e:
             import traceback
             ctl.log(f"[loop] fatal: {e}")

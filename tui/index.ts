@@ -40,7 +40,7 @@ process.on("unhandledRejection", (reason) => {
 const DEFAULT_SCRIPT = `setcpm(90/4)
 
 stack(
-  s("bd*4").gain(0.85)
+  chord("<Am7 Am7 CM7 Am7>").voicing().s("piano").gain(0.3).room(0.4).slow(4)
 )`
 
 const renderer = await createCliRenderer({

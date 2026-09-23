@@ -135,7 +135,8 @@ def run_live(a, provider, model, base_url, key):
                backend=backend, provider=provider, base_url=base_url,
                reference=not getattr(a, "no_reference", False),
                feedback_enabled=not getattr(a, "no_feedback", False),
-               reasoning=getattr(a, "reasoning", "none"))
+               reasoning=getattr(a, "reasoning", "none"),
+               record_dir=getattr(a, "record", None))
 
 
 def run_tui(a, provider, model, base_url, key):
@@ -203,6 +204,8 @@ def main(argv=None):
     p_new.add_argument("--tick", type=int, default=10)
     p_new.add_argument("--dry", action="store_true")
     p_new.add_argument("--output", default=None, help="audio output device (default: follow system default)")
+    p_new.add_argument("--record", nargs="?", const="auto", default=None,
+                       help="save each capture as WAV (default: <session>/audio)")
     _add_llm_flags(p_new)
     p_new.set_defaults(fn=lambda a: run_live(a, *resolve_llm(a)))
 
@@ -218,6 +221,8 @@ def main(argv=None):
     p_tui.add_argument("--tick", type=int, default=10)
     p_tui.add_argument("--port", type=int, default=8765, help="control server port")
     p_tui.add_argument("--output", default=None, help="audio output device (default: follow system default)")
+    p_tui.add_argument("--record", nargs="?", const="auto", default=None,
+                       help="save each capture as WAV (default: <session>/audio)")
     _add_llm_flags(p_tui)
     p_tui.set_defaults(fn=lambda a: run_tui(a, *resolve_llm(a)))
 

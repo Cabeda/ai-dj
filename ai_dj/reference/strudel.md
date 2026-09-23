@@ -146,6 +146,24 @@ colons: `"C:bebop:major"`.
 - `s("hh:2")` is shorthand for `s("hh").n(2)`.
 - Samples lazy-load; the first hit can be silent.
 
+## Sounding human
+
+MIDI-like output is recognisable: sharp attacks, no room, flat dynamics, mono.
+To make the set feel natural:
+
+- **Room** — `.room(0.3–0.6)` on every melodic layer. Pads and strings want
+  more (0.5–0.6); drums want less (0.05–0.15).
+- **Dynamics** — use `rand.range(...)` on `gain` instead of a fixed value. A
+  spread of 20–30% around the target gives human velocity variation.
+- **Attack** — `.attack(x)` on sustained layers (0.2–2s). Plucked/percussive
+  layers can stay short.
+- **Chorus/thickness** — `.superimpose(x => x.gain(0.3).late(0.012).pan(0.3))`
+  on pads and leads makes them wide and lush instead of thin and centred.
+- **Micro-timing** — `.late(0.01)` on a layer pushes it slightly out of the
+  grid, breaking perfect quantization.
+- **Filter movement** — `.lpf(sine.range(...).slow(...))` gives evolving timbre
+  instead of a static filter.
+
 ## Recipes
 
 ```js
