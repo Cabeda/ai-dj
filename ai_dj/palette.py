@@ -148,6 +148,19 @@ def names(backend=None):
     return tuple(ins.name for ins in for_backend(backend))
 
 
+def as_markdown():
+    """Markdown table of every instrument and its Strudel id.
+
+    Appended to the LLM reference so the model always sees the current palette,
+    not a hand-copied snapshot that drifts.
+    """
+    lines = ["| Canonical | Family | Strudel id |", "| --- | --- | --- |"]
+    for ins in PALETTE:
+        sid = ins.realisations.get(STRUDEL, "—")
+        lines.append(f"| {ins.name} | {ins.family} | `{sid}` |")
+    return "\n".join(lines)
+
+
 def describe(backend):
     """A compact, model-facing list of what the backend can play."""
     lines = []

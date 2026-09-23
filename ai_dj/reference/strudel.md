@@ -22,28 +22,9 @@ Verified against <https://strudel.cc/> and the AI-optimised reference
 
 ## Instrument palette
 
-`<name>` → the string to pass to `s(...)`. Pick the canonical name; use its
-Strudel id in code.
-
-- **drums**: kick→`bd`, snare→`sd`, hat→`hh`, perc→`perc`
-- **bass**: acid_bass→`sawtooth`, sub_bass→`sine`
-- **synth**: pad→`sawtooth`, lead→`sawtooth`, arp→`triangle`, drone→`saw`
-  (avoid `supersaw`: it needs an AudioWorklet, which the headless host lacks)
-- **keys**: piano→`gm_piano`, electric_piano→`gm_electric_piano_1`,
-  harpsichord→`gm_harpsichord`, organ→`gm_church_organ`
-- **strings**: violin→`gm_violin`, viola→`gm_viola`, cello→`gm_cello`,
-  contrabass→`gm_contrabass`, string_ensemble→`gm_string_ensemble_1`,
-  tremolo_strings→`gm_tremolo_strings`, pizzicato_strings→`gm_pizzicato_strings`,
-  harp→`gm_orchestral_harp`, timpani→`gm_timpani`
-- **brass**: trumpet→`gm_trumpet`, trombone→`gm_trombone`,
-  french_horn→`gm_french_horn`, tuba→`gm_tuba`, brass_section→`gm_brass_section`
-- **woodwind**: flute→`gm_flute`, piccolo→`gm_piccolo`, oboe→`gm_oboe`,
-  english_horn→`gm_english_horn`, clarinet→`gm_clarinet`, bassoon→`gm_bassoon`
-- **voice**: choir→`gm_choir_aahs`, voice_oohs→`gm_voice_oohs`
-- **fx**: noise→`white`
-
-The `gm_*` names are General MIDI soundfonts (sampled). They are the classical
-palette. Drum/synth names are built in.
+See the *Current instrument palette* table appended at the end of this
+reference — it is generated live and is the authoritative list of instrument
+ids. Do not use any id that is not in that table.
 
 ## Mini-notation
 

@@ -194,7 +194,13 @@ def _system(kind, lang=DEFAULT_LANG, reference=True, anchored=False):
     base = prompts.get(lang, prompts[DEFAULT_LANG])
     if not reference:
         return base  # without the (large) reference
-    return base + _load_reference(lang)
+    text = base + _load_reference(lang)
+    if lang == "strudel":
+        # always append the current palette so the model cannot generate
+        # instrument ids that render silence
+        from . import palette
+        text += "\n\n# Current instrument palette\n" + palette.as_markdown()
+    return text
 
 
 def load_env_key(env_path):
