@@ -111,7 +111,9 @@ const { registerSoundfonts } = await import("@strudel/soundfonts")
 
 await import("@strudel/tonal")
 
-await core.evalScope(core, mini)
+// Same eval scope as the host: without `webaudio` a script calling
+// `samples(...)` throws here, so every capture of such a set fails.
+await core.evalScope(core, mini, sd)
 
 // Scripts open with `setcpm(<bpm>/4)`. The REPL defines it inside repl(); we
 // are not the REPL, so without this the call hangs the transpiler instead of

@@ -105,6 +105,12 @@ These cost real debugging time; they are not obvious from the code.
   **after** the superdough import.
 - `setcpm`/`setcps` must be registered in `core.evalScope`, or a script's
   opening `setcpm(...)` hangs the transpiler instead of erroring.
+- **`evalScope` must include the `webaudio` module** — in the host *and* the
+  renderer. Without it a script calling `samples(...)` throws
+  `samples is not defined`; the host then keeps the previous pattern and a
+  manual edit silently does nothing.
+- A `play` that the engine rejects must not be reported as success. `play`
+  returns a bool; `apply_manual` and the evolve path roll back and say why.
 - Capture runs in a **separate process** (`render.ts`) — in-process it races the
   live scheduler and renders silence. Use `Bun.spawn` (async); `spawnSync`
   blocks the event loop and stutters the music.
@@ -118,8 +124,11 @@ These cost real debugging time; they are not obvious from the code.
 - OpenTUI renders **diffs**, so raw pty bytes cannot be searched for a full
   string. To assert on the screen, use `@opentui/core/testing`'s
   `createTestRenderer().captureCharFrame()`.
-- `renderer.destroy()` can hang on an active render pass; quitting calls
-  `process.exit(0)`.
+- `renderer.destroy()` can hang on an active render pass, so quitting calls
+  `process.exit(0)` — but that skips OpenTUI's terminal restore. Always call
+  `restoreTerminal()` first (it is idempotent), including on `uncaughtException`
+  and on SIGTERM from the launcher, or the terminal is left in the alternate
+  screen with mouse reporting on.
 
 **Platform / misc**
 

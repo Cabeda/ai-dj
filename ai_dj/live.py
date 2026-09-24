@@ -154,6 +154,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     valid = valid_strudel if lang == "strudel" else valid_ruby
     cap = os.path.join("/tmp", f"ai_dj_cap_{os.getpid()}.wav")
     fb = Feedback(feedback_enabled)
+    # Pausing silences the set and freezes the loop — no capture, no model call
+    # — until the user continues. A boxed flag so the closures below share it.
+    paused = [False]
 
     def log(line):
         # TUI owns the terminal — never print there; stdout collides with OpenTUI.
@@ -168,7 +171,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                               bpm=state.bpm, key=state.key, mode=state.mode,
                               energy=round(state.energy, 2), section=state.section,
                               layers=list(state.layers), last_action=state.last_action,
-                              script=script)
+                              script=script, paused=paused[0])
+
+    def play_live(code):
+        """Play unless paused. Silence is the point of a pause, so the loop's
+        play calls must not un-mute it."""
+        if paused[0]:
+            return True
+        return backend.play(code)
 
     if session_id:
         ver, script = session.load_latest(session_id)
@@ -213,7 +223,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
 
     backend.boot()
     backend.set_volume(1.0)
-    backend.play(script)
+    play_live(script)
     log("[play] starter running (instant)")
     sync_state(script)
 
@@ -224,42 +234,74 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     def apply_manual(manual):
         nonlocal script, prev_sig
         if not valid(manual):
+            state.last_action = f"manual edit rejected (invalid {lang})"
             log(f"[manual] rejected edit (invalid {lang})")
+            sync_state(script)
             return
         with apply_lock:
+            # Play first: if the engine rejects it, nothing has changed yet.
+            # The old script stays current, and the reason reaches the status
+            # line — a manual edit that silently does nothing is the worst
+            # possible outcome.
+            try:
+                ok = play_live(manual)
+                why = "the engine rejected the script"
+            except BackendClosed:
+                raise
+            except Exception as e:
+                ok, why = False, str(e)
+            if not ok:
+                state.last_action = f"manual edit failed: {why}"
+                log(f"[manual] {why}")
+                sync_state(script)
+                return
             layers = parse_layers(manual)
             if layers:
                 state.layers = layers
             state.last_action = "manual edit"
             script = manual
             session.save_script(sess_path, script, lang=lang)
-            backend.play(script)
             sync_state(script)
             prev_sig = None
             manual_rev[0] += 1
         log(f"[manual] applied user edit ({len(state.layers)} layers)")
 
     def run_command(cmd):
-        if cmd == "stop":
-            backend.stop()
-            log("[cmd] stopped")
+        if cmd in ("pause", "stop"):
+            if not paused[0]:
+                paused[0] = True
+                backend.stop()
+                state.last_action = "paused"
+                log("[cmd] paused")
+                sync_state(script)
         elif cmd == "resume":
-            with apply_lock:
-                backend.play(script)
-            log("[cmd] resumed")
+            if paused[0]:
+                paused[0] = False
+                with apply_lock:
+                    play_live(script)
+                state.last_action = "resumed"
+                log("[cmd] resumed")
+                sync_state(script)
 
     wake = threading.Event()
 
     def watcher():
         # TUI edits must not wait for capture/LLM work in the main loop
         while True:
-            manual = control.drain_manual_script()
-            if manual:
-                apply_manual(manual)
-            for cmd in control.drain_commands():
-                run_command(cmd)
-            if control.has_feedback():
-                wake.set()
+            try:
+                manual = control.drain_manual_script()
+                if manual:
+                    apply_manual(manual)
+                for cmd in control.drain_commands():
+                    run_command(cmd)
+                if control.has_feedback():
+                    wake.set()
+            except BackendClosed:
+                return  # we are leaving
+            except Exception as e:
+                # never let one bad edit kill the watcher: that would silently
+                # disable every future manual edit and command
+                log(f"[watch] error: {e}")
             time.sleep(0.2)
 
     if control:
@@ -288,7 +330,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 if not valid(script):
                     raise ValueError(f"rendered seed invalid for {lang}")
                 name = session.save_script(sess_path, script, lang=lang)
-                backend.play(script)
+                play_live(script)
                 log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
                 sync_state(script)
         except Exception as e:
@@ -308,6 +350,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             wake.clear()
             ticks += 1
             rev_before = manual_rev[0]
+
+            if paused[0]:
+                # silence is already in effect; skip capture, the model call
+                # and playback. Queued feedback waits for the resume.
+                continue
 
             items = control.drain_feedback() if control else []
             replace_text = "; ".join(i["text"] for i in items if i.get("mode") == "replace")
@@ -351,7 +398,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     continue
                 with apply_lock:
                     name = session.save_script(sess_path, script, lang=lang)
-                    backend.play(script)
+                    play_live(script)
                     sync_state(script)
                 last_llm = time.time()
                 log(f"[replace] applied {name} ({len(state.layers)} layers, "
@@ -393,7 +440,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     last_var = time.time()
                     with apply_lock:
                         script = state.render()
-                        backend.play(script)
+                        play_live(script)
                         sync_state(script)
                     log(f"[tick {ticks}] deterministic variation (no model call)")
                 elif ticks % 6 == 0:
@@ -420,7 +467,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 if state.variation():
                     with apply_lock:
                         script = state.render()
-                        backend.play(script)
+                        play_live(script)
                         sync_state(script)
                 continue
 
@@ -451,8 +498,17 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     log(f"[llm] rendered script invalid; rolled back")
                     last_llm = time.time()
                     continue
+                # the engine can still reject a structurally valid script
+                # (an unknown function, a bad sample pack); roll back rather
+                # than report music that is not actually playing
+                if not play_live(script):
+                    state.layers = prev_layers
+                    script = state.render()
+                    play_live(script)
+                    log(f"[llm] engine rejected the patch; rolled back")
+                    last_llm = time.time()
+                    continue
                 name = session.save_script(sess_path, script, lang=lang)
-                backend.play(script)
                 sync_state(script)
             last_llm = time.time()
             u = decided.get("_usage", {})

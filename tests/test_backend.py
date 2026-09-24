@@ -110,6 +110,36 @@ class StdioBackendTests(unittest.TestCase):
         finally:
             be.shutdown()
 
+    def test_play_reports_a_rejected_script(self):
+        # A host that refuses every play, like Strudel did when `samples` was
+        # missing from the eval scope. play() must report it, not pretend the
+        # swap worked and leave the previous pattern running.
+        refusing = (
+            "import json,sys\n"
+            "for line in sys.stdin:\n"
+            "    m=json.loads(line); op=m.get('op')\n"
+            "    if op=='boot': print(json.dumps({'event':'ready'}),flush=True)\n"
+            "    elif op=='play': print(json.dumps({'event':'error',"
+            "'message':'samples is not defined'}),flush=True)\n"
+            "    elif op=='shutdown': print(json.dumps({'event':'bye'}),flush=True); break\n"
+        )
+        logs = []
+        be = StdioBackend([sys.executable, "-c", refusing], log=logs.append)
+        try:
+            be.boot(timeout=5)
+            self.assertFalse(be.play("samples('x')\ns('bd')"))
+        finally:
+            be.shutdown()
+        self.assertTrue(any("rejected" in line for line in logs), logs)
+
+    def test_play_reports_success(self):
+        be = StdioBackend([sys.executable, HOST], log=lambda *a: None)
+        try:
+            be.boot(timeout=5)
+            self.assertTrue(be.play("note('c3')"))
+        finally:
+            be.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()

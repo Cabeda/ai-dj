@@ -53,14 +53,18 @@ console.error = (...a: unknown[]) => log(`error: ${a.map(String).join(" ")}`)
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")
+const webaudio = await import("@strudel/webaudio")
 const { webaudioOutput, getAudioContext, registerSynthSounds, registerZZFXSounds } =
-  await import("@strudel/webaudio")
+  webaudio
 const { registerSoundfonts } = await import("@strudel/soundfonts")
 const { samples } = await import("superdough")
 await import("@strudel/tonal") // registers .scale/.chord/.voicing
 
 const { evalScope, evaluate, getTrigger, Cyclist } = core as any
-await evalScope(core, mini)
+// Expose the same globals the Strudel REPL does. Without `webaudio` in scope a
+// script calling `samples(...)` (or `register`, `aliasBank`, ...) throws
+// "samples is not defined" — and the host would keep the previous pattern.
+await evalScope(core, mini, webaudio)
 
 registerSynthSounds?.()
 registerZZFXSounds?.()
@@ -127,6 +131,12 @@ await evalScope({ setcpm, setcps })
 
 let currentCode = ""
 let pattern: any = null
+
+// Silent mode (AI_DJ_SILENT=1) still evaluates every script — so validation and
+// offline capture behave identically — but never schedules it to the speakers.
+// The test suite uses it: the machine can still hear the audio (by rendering
+// it), the human cannot.
+const SILENT = process.env.AI_DJ_SILENT === "1"
 
 function log(msg: string) {
   process.stderr.write(`[host] ${msg}\n`)
@@ -221,7 +231,7 @@ function send(obj: unknown) {
 async function handle(msg: any) {
   switch (msg.op) {
     case "boot":
-      send({ event: "ready" })
+      send({ event: "ready", silent: SILENT })
       break
     case "play": {
       currentCode = msg.script ?? ""
@@ -236,7 +246,8 @@ async function handle(msg: any) {
       const code = msg.script ?? ""
       try {
         const { pattern: p } = await evaluate(code, transpiler)
-        await scheduler.setPattern(p, true)
+        // capture() renders currentCode offline, so silent mode still works
+        if (!SILENT) await scheduler.setPattern(p, true)
         currentCode = code
         send({ event: "playing" })
       } catch (e: any) {

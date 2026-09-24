@@ -21,6 +21,11 @@ class Control:
 
     def set_state(self, **kw):
         with self._lock:
+            if "script" in kw and kw["script"] != self.state.get("script"):
+                # A monotonic revision lets the UI tell a genuinely new script
+                # apart from one it sent that the engine rejected (the script
+                # value is unchanged, so the revision is too).
+                self.state["script_rev"] = self.state.get("script_rev", 0) + 1
             self.state.update(kw)
 
     def log(self, line):

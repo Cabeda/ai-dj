@@ -11,6 +11,8 @@ for line in sys.stdin:
     op = msg.get("op")
     if op == "boot":
         print(json.dumps({"event": "ready"}), flush=True)
+    elif op == "play":
+        print(json.dumps({"event": "playing"}), flush=True)
     elif op == "capture":
         print(json.dumps({"event": "captured", "path": msg.get("path")}), flush=True)
     elif op == "shutdown":

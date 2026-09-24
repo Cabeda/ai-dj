@@ -29,11 +29,21 @@ function logLine(tag: string, text: string) {
 
 process.on("uncaughtException", (err) => {
   logLine("[tui:uncaught]", err?.stack ?? String(err))
+  restoreTerminal()
   process.exit(1)
 })
 process.on("unhandledRejection", (reason) => {
   logLine("[tui:unhandled]", reason instanceof Error ? reason.stack ?? reason.message : String(reason))
 })
+
+// The launcher terminates us with SIGTERM on teardown; without a handler Bun
+// exits without restoring the terminal.
+for (const sig of ["SIGTERM", "SIGHUP", "SIGINT"] as const) {
+  process.on(sig, () => {
+    restoreTerminal()
+    process.exit(0)
+  })
+}
 
 // Minimal, audible starting point (Strudel — the default backend). The server
 // replaces this on the first poll. Edit freely, then shift+enter to apply.
@@ -146,7 +156,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "shift+enter apply  ·  select text to copy  ·  ctrl+y copy clean script  ·  ctrl+k commands  ·  ctrl+q quit",
+  content: "shift+enter apply  ·  ctrl+p pause  ·  select text to copy  ·  ctrl+k commands  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -255,7 +265,9 @@ let destroyed = false
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let applying = 0
 let syncedScript = DEFAULT_SCRIPT
+let seenScriptRev = -1
 let logVisible = false
+let paused = false
 let paletteOpen = false
 let paletteQuery = ""
 let paletteIndex = 0
@@ -352,13 +364,24 @@ function applyScript() {
   syncedScript = ruby
   dirty = false
   void post("/script", { ruby })
-  status.content = "ai-dj  applied script"
+  // don't claim success: the engine may reject it, and the status line will
+  // say so (manual edit / manual edit failed: ...)
+  status.content = "ai-dj  sent script to the engine"
 }
 
 function selectAllScript() {
   scriptArea.focus()
   scriptArea.selectAll()
   status.content = "ai-dj  selected the whole script — type or paste to replace"
+}
+
+// Pause silences the set and freezes the loop (no capture, no model call)
+// until continued. The server owns the truth; we set it optimistically so the
+// key feels instant, and the poll corrects us.
+function togglePause() {
+  paused = !paused
+  void post("/command", { cmd: paused ? "pause" : "resume" })
+  status.content = paused ? "ai-dj  paused" : "ai-dj  playing"
 }
 
 // Replace the whole script with the clipboard's text in one step. The
@@ -396,6 +419,11 @@ const toggleLogsCommand: PaletteCommand = {
   run: () => setLogVisible(!logVisible),
 }
 
+const togglePauseCommand: PaletteCommand = {
+  label: "Pause music",
+  run: () => togglePause(),
+}
+
 const paletteCommands: PaletteCommand[] = [
   { label: "Apply script", run: () => applyScript() },
   { label: "Paste script from clipboard", run: () => void pasteScript() },
@@ -414,8 +442,7 @@ const paletteCommands: PaletteCommand[] = [
       applyScript()
     },
   },
-  { label: "Stop music", run: () => void post("/command", { cmd: "stop" }) },
-  { label: "Resume music", run: () => void post("/command", { cmd: "resume" }) },
+  togglePauseCommand,
   { label: "Quit", run: () => destroyAll() },
 ]
 
@@ -429,6 +456,9 @@ function renderPalette() {
   if (paletteIndex >= items.length) paletteIndex = Math.max(0, items.length - 1)
   const lines = items.map((c, i) => (i === paletteIndex ? `▶ ${c.label}` : `  ${c.label}`))
   paletteView.content = `> ${paletteQuery}\n\n${lines.join("\n")}`
+  // grow to fit the filtered list (query + blank + items + border) so the last
+  // commands are never clipped, but never taller than the screen
+  paletteBox.height = Math.min(items.length + 4, Math.max(6, renderer.height - 6))
 }
 
 function openPalette() {
@@ -525,13 +555,38 @@ function destroyAll() {
   stopTimers()
   // clipboard.dispose() is async but must not block quitting; fire and forget.
   void clipboard.dispose().catch(() => {})
+  restoreTerminal()
   // renderer.destroy() can hang on an active render pass; leave immediately.
   process.exit(0)
+}
+
+// OpenTUI restores the terminal inside destroy(), but destroy() can block on an
+// active render pass — and process.exit() skips cleanup entirely. Quitting then
+// left the terminal in the alternate screen with mouse reporting still on (an
+// earlier build enabled it), so the shell echoed mouse escapes as garbage.
+// Restore the modes ourselves: it cannot hang, and it is idempotent.
+function restoreTerminal() {
+  try {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false)
+  } catch {}
+  try {
+    require("fs").writeSync(
+      1,
+      "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l" + // mouse reporting off
+        "\x1b[?2004l" + // bracketed paste off
+        "\x1b[?1004l" + // focus reporting off
+        "\x1b[?2026l" + // synchronized output off
+        "\x1b[?25h" + // show the cursor
+        "\x1b[0m" + // reset attributes
+        "\x1b[?1049l", // leave the alternate screen
+    )
+  } catch {}
 }
 
 // belt-and-suspenders: any external destroy path also exits the process
 renderer.on("destroy", () => {
   stopTimers()
+  restoreTerminal()
   setTimeout(() => process.exit(0), 50)
 })
 
@@ -595,6 +650,8 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
     applyScript()
+  } else if (key.ctrl && (key.name === "p" || key.sequence === "\u0010")) {
+    togglePause()
   } else if (key.ctrl && (key.name === "y" || key.sequence === "\u0019")) {
     copySelection()
   } else if (key.ctrl && (key.name === "c" || key.sequence === "\u0003")) {
@@ -620,7 +677,9 @@ async function poll() {
     const r = await fetch(URL + "/state")
     const s = (await r.json()) as Record<string, any>
     if (destroyed) return
-    const state = s.running ? "● playing" : "○ idle"
+    paused = !!s.paused
+    togglePauseCommand.label = paused ? "Continue music" : "Pause music"
+    const state = paused ? "⏸ paused" : s.running ? "● playing" : "○ idle"
     const line =
       `ai-dj ${state}  ${s.bpm ?? "?"}bpm  ${s.key ?? "?"} ${s.mode ?? ""}  ` +
       `energy ${s.energy ?? "?"}  ${s.section ?? ""}  ·  ${s.model ?? ""}  ·  ${s.last_action ?? ""}`
@@ -631,8 +690,15 @@ async function poll() {
       lastLog = log
       setLog(log)
     }
-    if (!dirty && typeof s.script === "string" && s.script && s.script !== scriptArea.plainText) {
-      animateScript(s.script)
+    // Adopt the server's script only when it actually changed (script_rev).
+    // Otherwise a manual edit the engine rejected — same script, same revision
+    // — would revert the text the user just pasted.
+    const rev = typeof s.script_rev === "number" ? s.script_rev : 0
+    if (rev !== seenScriptRev) {
+      seenScriptRev = rev
+      if (!dirty && typeof s.script === "string" && s.script && s.script !== scriptArea.plainText) {
+        animateScript(s.script)
+      }
     }
   } catch {
     if (destroyed) return

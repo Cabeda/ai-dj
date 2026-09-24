@@ -37,6 +37,10 @@ from abc import ABC, abstractmethod
 
 BACKEND_NAME = "abstract"
 
+# How long to wait for the host to accept a script. Evaluating a pattern is
+# fast; this only bites if the host has wedged.
+PLAY_TIMEOUT = 30
+
 
 class BackendClosed(RuntimeError):
     """Raised when the backend is asked to work after shutdown began.
@@ -56,8 +60,12 @@ class SoundBackend(ABC):
         """Start the engine. Raise on failure."""
 
     @abstractmethod
-    def play(self, script: str) -> None:
-        """Start (or replace) the live set with `script`."""
+    def play(self, script: str) -> bool:
+        """Start (or replace) the live set with `script`.
+
+        Returns False if the engine rejected the script — it keeps playing the
+        previous one. Raise only for transport failures.
+        """
 
     @abstractmethod
     def stop(self) -> None:
@@ -110,8 +118,9 @@ class SonicPiBackend(SoundBackend):
     def boot(self, timeout: float = 90, audio_driver=None):
         return self._sp.boot(timeout=timeout, audio_driver=audio_driver)
 
-    def play(self, script: str) -> None:
+    def play(self, script: str) -> bool:
         self._sp.run_code(script)
+        return True
 
     def stop(self) -> None:
         self._sp.stop_all()
@@ -126,7 +135,7 @@ class SonicPiBackend(SoundBackend):
         self._sp.shutdown()
 
 
-def make_strudel_backend(log=print, bundle=None, stderr=None):
+def make_strudel_backend(log=print, bundle=None, stderr=None, silent=True):
     """Build the Strudel backend: a Bun host speaking the stdio protocol.
 
     Opt-in for now — see strudel/README.md for status. The host is bundled at
@@ -135,12 +144,23 @@ def make_strudel_backend(log=print, bundle=None, stderr=None):
     `stderr` is where the host's own diagnostics go. Leave it None to inherit
     the terminal (CLI runs); pass an open log file under the TUI, where any
     stderr write would corrupt the OpenTUI screen.
+
+    `silent` (the default) keeps the host from scheduling audio to the
+    speakers while still evaluating every script, so offline capture — and
+    therefore the tests — work unchanged. Blasting audio at whoever runs the
+    tests is never right, so the app opts *in* to sound; `AI_DJ_SILENT=1`
+    forces silence regardless.
     """
     import os
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     host = bundle or os.path.join(root, "strudel", "host.bundle.mjs")
-    return StdioBackend(["bun", host], name="strudel", log=log, stderr=stderr)
+    if os.environ.get("AI_DJ_SILENT") == "1":
+        silent = True
+    env = dict(os.environ)
+    env["AI_DJ_SILENT"] = "1" if silent else "0"
+    return StdioBackend(["bun", host], name="strudel", log=log, stderr=stderr,
+                        env=env)
 
 
 class StdioBackend(SoundBackend):
@@ -151,10 +171,11 @@ class StdioBackend(SoundBackend):
 
     name = "stdio"
 
-    def __init__(self, argv, log=print, stderr=None, name=None):
+    def __init__(self, argv, log=print, stderr=None, name=None, env=None):
         self.argv = list(argv)
         self.log = log
         self._stderr = stderr
+        self._env = env
         if name:
             # the host's palette, e.g. name="strudel"
             self.name = name
@@ -163,6 +184,7 @@ class StdioBackend(SoundBackend):
         self._dead = False
         self._closed = False
         self._warned_non_json = False
+        self.silent = False
         self._cv = threading.Condition()
 
     # -- process plumbing ---------------------------------------------------
@@ -174,6 +196,7 @@ class StdioBackend(SoundBackend):
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self._stderr,
+            env=self._env,
             text=True,
             bufsize=1,
         )
@@ -236,14 +259,26 @@ class StdioBackend(SoundBackend):
     def boot(self, timeout: float = 90, audio_driver=None):
         self._start()
         self._send({"op": "boot", "timeout": timeout})
-        if self._wait("ready", timeout) is None:
+        ready = self._wait("ready", timeout)
+        if ready is None:
             raise RuntimeError("stdio backend did not become ready")
+        # the host reports whether it will schedule to the speakers; tests
+        # assert this is True so a regression cannot start making noise
+        self.silent = bool(ready.get("silent"))
         return self
 
-    def play(self, script: str) -> None:
+    def play(self, script: str) -> bool:
         if self._closed:
-            return  # leaving; a late edit is not an error
+            return True  # leaving; a late edit is not an error
         self._send({"op": "play", "script": script})
+        # The host answers `playing`, or `error` (and keeps the previous
+        # pattern). Wait for the verdict so a rejected script is never silently
+        # ignored — the whole point of a manual edit is that it takes effect.
+        try:
+            return self._wait("playing", PLAY_TIMEOUT) is not None
+        except RuntimeError as e:
+            self.log(f"[stdio] play rejected: {e}")
+            return False
 
     def stop(self) -> None:
         if self._closed:

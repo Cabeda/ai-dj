@@ -122,7 +122,9 @@ def make_backend(a, log=print, stderr=None):
                 log(f"[audio] following system default output: {act['name']} ({act['transport']})")
         return backend
     from .backend import make_strudel_backend
-    return make_strudel_backend(log=log, stderr=stderr)
+    # the app is the one caller that wants sound; make_strudel_backend is
+    # silent by default so tests and tools never blast audio at the user
+    return make_strudel_backend(log=log, stderr=stderr, silent=False)
 
 
 def run_live(a, provider, model, base_url, key):

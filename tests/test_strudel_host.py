@@ -38,6 +38,33 @@ class StrudelHostTests(unittest.TestCase):
             be.shutdown()
         self.assertIsNone(be.proc)
 
+    def test_the_suite_runs_the_host_silently(self):
+        # The integration tests drive the real host; it must never schedule
+        # audio to the machine's speakers.
+        from ai_dj.backend import make_strudel_backend
+
+        be = make_strudel_backend(log=lambda *a: None)
+        try:
+            be.boot(timeout=60)
+            self.assertTrue(be.silent, "integration tests must not make noise")
+        finally:
+            be.shutdown()
+
+    def test_play_accepts_a_script_that_calls_samples(self):
+        # Regression: `samples` was missing from the host's eval scope, so any
+        # script calling it threw "samples is not defined", the host kept the
+        # previous pattern, and a manual edit silently did nothing. The call is
+        # fire-and-forget, so this needs no network.
+        from ai_dj.backend import make_strudel_backend
+
+        be = make_strudel_backend(log=lambda *a: None)
+        try:
+            be.boot(timeout=60)
+            self.assertTrue(
+                be.play("samples('github:tidalcycles/dirt-samples')\ns(\"bd\")"))
+        finally:
+            be.shutdown()
+
     def test_capture_renders_real_audio(self):
         from ai_dj.backend import make_strudel_backend
 
