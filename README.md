@@ -115,16 +115,18 @@ Hear a starter without any model or audio, to check your setup:
 | Key | Action |
 |---|---|
 | `shift+enter` | apply the script you edited |
+| `ctrl+a` | select the whole script — then type or paste to replace it |
 | `enter` *(feedback box)* | send **guide** feedback — nudge the set |
 | `shift+enter` *(feedback box)* | send **replace** feedback — swap the whole vibe |
 | `ctrl+y` | copy the focused pane as clean text |
-| `ctrl+k` | command palette — copy, reset, stop/resume, **show/hide logs** |
+| `ctrl+k` | command palette — paste/select the script, copy, reset, stop/resume, **show/hide logs** |
 | `tab` | switch between the script and the feedback box |
 | `ctrl+q` | quit |
 
 Drag to select with the mouse and your terminal copies natively — the TUI does
-not capture the mouse. The **log is hidden by default**; toggle it from the
-command palette:
+not capture the mouse. To **swap in a whole new script**, use the palette's
+*Paste script from clipboard* (one step), or `ctrl+a` then paste. The **log is
+hidden by default**; toggle it from the command palette:
 
 <div align="center">
 

@@ -76,6 +76,9 @@ const scriptArea = new TextareaRenderable(renderer, {
   focusedBackgroundColor: "#11151b",
   cursorColor: "#7CFFB2",
   keyBindings: [
+    // Ctrl+A is the terminal-native select-all; the default binding is Cmd+A
+    // (super), which the palette also exposes.
+    { name: "a", ctrl: true, action: "select-all" },
     { name: "return", action: "newline" },
     { name: "return", shift: true, action: "submit" },
     { name: "return", meta: true, action: "submit" },
@@ -352,6 +355,35 @@ function applyScript() {
   status.content = "ai-dj  applied script"
 }
 
+function selectAllScript() {
+  scriptArea.focus()
+  scriptArea.selectAll()
+  status.content = "ai-dj  selected the whole script — type or paste to replace"
+}
+
+// Replace the whole script with the clipboard's text in one step. The
+// terminal's own paste works too, but only after select-all.
+async function pasteScript() {
+  try {
+    const res = await clipboard.read({ preferredTypes: ["text/plain"] })
+    if (res.status !== "read") {
+      status.content = `ai-dj  clipboard ${res.status} — press ctrl+a, then paste`
+      return
+    }
+    const text = new TextDecoder().decode(res.representation.bytes)
+    if (!text.trim()) {
+      status.content = "ai-dj  clipboard is empty"
+      return
+    }
+    setScriptText(text)
+    scriptArea.gotoBufferEnd()
+    dirty = false
+    applyScript()
+  } catch {
+    status.content = "ai-dj  could not read the clipboard — press ctrl+a, then paste"
+  }
+}
+
 // -- command palette --------------------------------------------------------
 
 interface PaletteCommand {
@@ -366,6 +398,8 @@ const toggleLogsCommand: PaletteCommand = {
 
 const paletteCommands: PaletteCommand[] = [
   { label: "Apply script", run: () => applyScript() },
+  { label: "Paste script from clipboard", run: () => void pasteScript() },
+  { label: "Select all script", run: () => selectAllScript() },
   { label: "Copy script", run: () => void copyText(scriptArea.plainText, "script") },
   { label: "Copy log", run: () => void copyText(lastLog, "log") },
   { label: "Copy script + log", run: () => void copyText(`${scriptArea.plainText}\n\n--- log ---\n${lastLog}`, "script + log") },
