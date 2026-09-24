@@ -101,5 +101,59 @@ class SessionStorageTests(unittest.TestCase):
         self.assertEqual(entries[0]["latest"], "0002.rb")
 
 
+class SessionMetaTests(unittest.TestCase):
+    """Names and favourites are how a session is found again later."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_base = session.BASE
+        session.BASE = self._tmp.name
+
+    def tearDown(self):
+        session.BASE = self._orig_base
+        self._tmp.cleanup()
+
+    def _entry(self, path):
+        return next(e for e in session.list_sessions()
+                    if e["id"] == os.path.basename(path))
+
+    def test_name_and_favourite_round_trip(self):
+        path = session.create_session({"seed": "night", "bpm": 92})
+        session.save_meta(path, name="Night ride", favorite=True)
+        entry = self._entry(path)
+        self.assertEqual(entry["name"], "Night ride")
+        self.assertTrue(entry["favorite"])
+
+    def test_a_session_without_meta_still_lists(self):
+        # sessions created before meta.json existed must not break the browser
+        path = session.create_session({"seed": "old", "bpm": 90})
+        os.unlink(session.meta_path(path))
+        entry = self._entry(path)
+        self.assertEqual(entry["name"], "")
+        self.assertFalse(entry["favorite"])
+
+    def test_favourites_sort_first(self):
+        old = session.create_session({"seed": "a", "bpm": 90})
+        new = session.create_session({"seed": "b", "bpm": 91})
+        session.save_meta(old, favorite=True)
+        self.assertEqual(session.list_sessions()[0]["id"], os.path.basename(old))
+        self.assertEqual(session.list_sessions()[1]["id"], os.path.basename(new))
+
+    def test_created_is_read_from_the_slug(self):
+        path = session.create_session({"seed": "x", "bpm": 90})
+        self.assertGreater(self._entry(path)["created"], 0)
+
+    def test_preview_is_the_latest_script(self):
+        path = session.create_session({"seed": "x", "bpm": 90})
+        session.save_script(path, "stack(s('bd'))\n", lang="strudel")
+        self.assertIn("stack", session.preview(path))
+
+    def test_corrupt_meta_is_ignored(self):
+        path = session.create_session({"seed": "x", "bpm": 90})
+        with open(session.meta_path(path), "w") as f:
+            f.write("{not json")
+        self.assertEqual(self._entry(path)["name"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

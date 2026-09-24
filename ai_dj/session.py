@@ -6,6 +6,7 @@ comments inside the scripts. The filename encodes the version.
   sessions/<timestamp>-<slug>/0001.mjs
   sessions/<timestamp>-<slug>/0002.mjs
   ...
+  sessions/<timestamp>-<slug>/meta.json      name, favourite, ...
   last.rb / last.mjs -> symlink to the latest version
 
 An all-day run saves a script every evolve (thousands per day), so versioning
@@ -13,8 +14,11 @@ reads the symlink rather than scanning the directory, and old versions are
 pruned to KEEP_VERSIONS. `last.*` is never pruned.
 
 `list_sessions` reads the dirs; `load_latest(id)` returns the latest script.
+`meta.json` carries what a human needs to find a session again — a name and a
+favourite flag — and is absent for sessions created before it existed.
 """
 
+import json
 import os
 import re
 import time
@@ -28,6 +32,7 @@ BASE = os.environ.get(
 KEEP_VERSIONS = 200
 
 _EXT = {"sonic_pi": "rb", "strudel": "mjs"}
+META = "meta.json"
 
 
 def _slug(seed_info):
@@ -44,9 +49,13 @@ def _version_of(name):
 
 
 def create_session(seed_info=None):
-    name = _slug(seed_info or {})
+    info = seed_info or {}
+    name = _slug(info)
     path = os.path.join(BASE, name)
     os.makedirs(path, exist_ok=True)
+    save_meta(path, bpm=info.get("bpm"), key=info.get("key"),
+              mode=info.get("mode") or info.get("scale"),
+              archetype=info.get("archetype"), created=time.time())
     return path
 
 
@@ -109,8 +118,66 @@ def list_sessions():
             if os.path.islink(last) and os.path.exists(last):
                 latest = os.readlink(last)
                 break
-        out.append({"id": d, "path": p, "latest": latest})
+        meta = load_meta(p)
+        out.append({
+            "id": d,
+            "path": p,
+            "latest": latest,
+            "name": meta.get("name") or "",
+            "favorite": bool(meta.get("favorite")),
+            "created": _created_of(d),
+        })
+    # newest first, favourites on top
+    out.sort(key=lambda s: (not s["favorite"], -s["created"]))
     return out
+
+
+# -- metadata (name, favourite) ---------------------------------------------
+
+def _created_of(name):
+    """The unix timestamp the slug starts with, or 0."""
+    m = re.match(r"(\d{9,})-", name or "")
+    return float(m.group(1)) if m else 0.0
+
+
+def meta_path(session_path):
+    return os.path.join(session_path, META)
+
+
+def load_meta(session_path):
+    """Metadata for a session dir. Never raises; missing means 'no name'."""
+    try:
+        with open(meta_path(session_path)) as f:
+            meta = json.load(f)
+        if not isinstance(meta, dict):
+            meta = {}
+    except (OSError, ValueError):
+        meta = {}
+    meta.setdefault("name", "")
+    meta.setdefault("favorite", False)
+    return meta
+
+
+def save_meta(session_path, **fields):
+    """Merge fields into a session's metadata. Ignores None (no accidental
+    clears) and never raises — losing a name is not worth crashing a run."""
+    meta = load_meta(session_path)
+    meta.update({k: v for k, v in fields.items() if v is not None})
+    try:
+        with open(meta_path(session_path), "w") as f:
+            json.dump(meta, f, indent=2)
+    except OSError:
+        pass
+    return meta
+
+
+def preview(session_path, limit=2000):
+    """The beginning of a session's latest script, for the browser."""
+    try:
+        _, script = load_latest(os.path.basename(session_path))
+    except (FileNotFoundError, OSError):
+        return ""
+    return script[:limit]
 
 
 def load_latest(session_id):

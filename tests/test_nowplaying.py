@@ -151,6 +151,32 @@ class WiringTests(unittest.TestCase):
                 finally:
                     be.done = True
 
+    def test_a_media_key_does_not_wait_for_the_next_tick(self):
+        # Regression: Now Playing commands were drained inside the tick loop,
+        # which blocks for a whole tick — so a press could take 10s to apply.
+        # The watcher handles them now, so a long tick must not matter.
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(session, "BASE", tmp), \
+                    mock.patch("ai_dj.nowplaying.NowPlaying", RecordingNowPlaying):
+                ctl, be = Control(), LoudBackend()
+                threading.Thread(
+                    target=live.run,
+                    kwargs=dict(key="", model="m", env="", backend=be, control=ctl,
+                                tick=5.0, dry=False, feedback_enabled=False),
+                    daemon=True).start()
+                try:
+                    time.sleep(0.5)
+                    np = RecordingNowPlaying.instances[0]
+                    start = time.time()
+                    np.commands.append("pause")
+                    while time.time() - start < 2.5 and not ctl.snapshot().get("paused"):
+                        time.sleep(0.05)
+                    self.assertTrue(ctl.snapshot().get("paused"),
+                                    "pause waited for the tick instead of the watcher")
+                    self.assertLess(time.time() - start, 2.5)
+                finally:
+                    be.done = True
+
 
 if __name__ == "__main__":
     unittest.main()

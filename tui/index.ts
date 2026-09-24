@@ -252,6 +252,49 @@ const paletteView = new TextRenderable(renderer, {
 paletteBox.add(paletteView)
 renderer.root.add(paletteBox)
 
+// Sessions browser (ctrl+l): the saved sets on the left, the selected script
+// on the right. Rendered on top; keys are handled by the global handler.
+const sessionsBox = new BoxRenderable(renderer, {
+  id: "sessionsbox",
+  position: "absolute",
+  top: 2,
+  left: "8%",
+  width: "84%",
+  height: "72%",
+  borderStyle: "rounded",
+  borderColor: "#8ad4ff",
+  title: " sessions ",
+  titleAlignment: "left",
+  flexDirection: "row",
+  overflow: "hidden",
+  backgroundColor: "#12151a",
+  zIndex: 100,
+  visible: false,
+})
+const sessionsListView = new TextRenderable(renderer, {
+  id: "sessionslist",
+  content: "",
+  fg: "#d7e0ea",
+  bg: "#12151a",
+  width: "44%",
+  height: "100%",
+  wrapMode: "none",
+  overflow: "hidden",
+})
+const sessionsPreviewView = new TextRenderable(renderer, {
+  id: "sessionspreview",
+  content: "",
+  fg: "#8b96a3",
+  bg: "#12151a",
+  width: "56%",
+  height: "100%",
+  wrapMode: "none",
+  overflow: "hidden",
+})
+sessionsBox.add(sessionsListView)
+sessionsBox.add(sessionsPreviewView)
+renderer.root.add(sessionsBox)
+
 let dirty = false
 let lastLog = ""
 let scriptFocused = true
@@ -268,7 +311,13 @@ let syncedScript = DEFAULT_SCRIPT
 let seenScriptRev = -1
 let logVisible = false
 let paused = false
+let autopilot = true
+let currentSessionId = ""
+let sessionsOpen = false
+let sessions: SessionRow[] = []
+let sessionsIndex = 0
 let paletteOpen = false
+let palettePrompt: { label: string; submit: (value: string) => void } | null = null
 let paletteQuery = ""
 let paletteIndex = 0
 
@@ -384,6 +433,16 @@ function togglePause() {
   status.content = paused ? "ai-dj  paused" : "ai-dj  playing"
 }
 
+// Freeze keeps the set playing but stops the DJ changing it: the script only
+// moves when you edit it. Different from pause, which also silences the audio.
+function toggleAutopilot() {
+  autopilot = !autopilot
+  void post("/command", { cmd: autopilot ? "autopilot-on" : "autopilot-off" })
+  status.content = autopilot
+    ? "ai-dj  autopilot on — the DJ is evolving the set"
+    : "ai-dj  frozen — only your edits change the script"
+}
+
 // Replace the whole script with the clipboard's text in one step. The
 // terminal's own paste works too, but only after select-all.
 async function pasteScript() {
@@ -424,6 +483,11 @@ const togglePauseCommand: PaletteCommand = {
   run: () => togglePause(),
 }
 
+const toggleAutopilotCommand: PaletteCommand = {
+  label: "Freeze the script (AI off)",
+  run: () => toggleAutopilot(),
+}
+
 const paletteCommands: PaletteCommand[] = [
   { label: "Apply script", run: () => applyScript() },
   { label: "Paste script from clipboard", run: () => void pasteScript() },
@@ -443,6 +507,10 @@ const paletteCommands: PaletteCommand[] = [
     },
   },
   togglePauseCommand,
+  toggleAutopilotCommand,
+  { label: "Browse sessions", run: () => void openSessions() },
+  { label: "Name this session", run: () => promptNameSession(currentSessionId, "session") },
+  { label: "Favorite this session", run: () => void toggleFavoriteCurrent() },
   { label: "Quit", run: () => destroyAll() },
 ]
 
@@ -452,6 +520,11 @@ function paletteMatches(): PaletteCommand[] {
 }
 
 function renderPalette() {
+  if (palettePrompt) {
+    paletteView.content = `> ${palettePrompt.label}: ${paletteQuery}`
+    paletteBox.height = 4
+    return
+  }
   const items = paletteMatches()
   if (paletteIndex >= items.length) paletteIndex = Math.max(0, items.length - 1)
   const lines = items.map((c, i) => (i === paletteIndex ? `▶ ${c.label}` : `  ${c.label}`))
@@ -463,16 +536,26 @@ function renderPalette() {
 
 function openPalette() {
   paletteOpen = true
+  palettePrompt = null
   paletteQuery = ""
   paletteIndex = 0
   paletteBox.visible = true
   renderPalette()
 }
 
+// A command that needs a value: reuse the palette's input line as a prompt.
+function openPalettePrompt(label: string, submit: (value: string) => void) {
+  openPalette()
+  palettePrompt = { label, submit }
+  renderPalette()
+}
+
 function closePalette() {
   paletteOpen = false
+  palettePrompt = null
   paletteBox.visible = false
-  scriptArea.focus()
+  // a prompt can be opened from inside the sessions browser; stay there
+  if (!sessionsOpen) scriptArea.focus()
 }
 
 function paletteMove(delta: number) {
@@ -483,9 +566,131 @@ function paletteMove(delta: number) {
 }
 
 function paletteRun() {
+  if (palettePrompt) {
+    const { submit } = palettePrompt
+    const value = paletteQuery.trim()
+    closePalette()
+    if (value) submit(value)
+    return
+  }
   const cmd = paletteMatches()[paletteIndex]
   closePalette()
   if (cmd) cmd.run()
+}
+
+// -- sessions browser -------------------------------------------------------
+
+interface SessionRow {
+  id: string
+  name: string
+  favorite: boolean
+  created: number
+  latest: string | null
+  preview: string
+}
+
+function fmtDate(ts: number): string {
+  if (!ts) return "—"
+  const d = new Date(ts * 1000)
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function fetchSessions(): Promise<SessionRow[]> {
+  try {
+    const r = await fetch(URL + "/sessions")
+    const s = (await r.json()) as { sessions?: SessionRow[] }
+    return s.sessions ?? []
+  } catch {
+    return []
+  }
+}
+
+async function openSessions() {
+  sessions = await fetchSessions()
+  // start on the set we are playing, if it is in the list
+  const here = sessions.findIndex((s) => s.id === currentSessionId)
+  sessionsIndex = here >= 0 ? here : 0
+  sessionsOpen = true
+  sessionsBox.visible = true
+  renderSessions()
+}
+
+function closeSessions() {
+  sessionsOpen = false
+  sessionsBox.visible = false
+  scriptArea.focus()
+}
+
+function renderSessions() {
+  const width = Math.max(18, Math.floor(renderer.width * 0.84 * 0.44) - 4)
+  const titleWidth = Math.max(8, width - 18)
+  const rows = sessions.map((s, i) => {
+    const mark = i === sessionsIndex ? "▶" : " "
+    const fav = s.favorite ? "♥" : " "
+    const title = (s.name || s.id).slice(0, titleWidth)
+    return `${mark}${fav} ${title.padEnd(titleWidth)}  ${fmtDate(s.created)}`
+  })
+  sessionsListView.content =
+    `${sessions.length} saved\n` +
+    "↑/↓ move · enter load\n" +
+    "f favorite · n name · esc\n\n" +
+    (rows.join("\n") || "(no sessions yet)")
+
+  const cur = sessions[sessionsIndex]
+  sessionsPreviewView.content = cur
+    ? `${cur.name || cur.id}\n${fmtDate(cur.created)}${cur.favorite ? "   ♥" : ""}\n\n` +
+      (cur.preview || "(empty)")
+    : ""
+}
+
+function sessionsMove(delta: number) {
+  if (!sessions.length) return
+  sessionsIndex = (sessionsIndex + delta + sessions.length) % sessions.length
+  renderSessions()
+}
+
+function sessionsToggleFavorite() {
+  const cur = sessions[sessionsIndex]
+  if (!cur) return
+  cur.favorite = !cur.favorite
+  void post("/session/favorite", { id: cur.id, favorite: cur.favorite })
+  // keep favourites on top, the way the server sorts them
+  sessions.sort((a, b) =>
+    a.favorite === b.favorite ? b.created - a.created : a.favorite ? -1 : 1)
+  sessionsIndex = Math.max(0, sessions.findIndex((s) => s.id === cur.id))
+  renderSessions()
+}
+
+function promptNameSession(id: string, label: string) {
+  if (!id) return
+  openPalettePrompt("name this session", (value) => {
+    void post("/session/name", { id, name: value })
+    const row = sessions.find((s) => s.id === id)
+    if (row) {
+      row.name = value
+      renderSessions()
+    }
+    status.content = `ai-dj  ${label} named "${value}"`
+  })
+}
+
+async function sessionsLoad() {
+  const cur = sessions[sessionsIndex]
+  if (!cur) return
+  await post("/session/load", { id: cur.id })
+  status.content = `ai-dj  loading ${cur.name || cur.id}`
+  closeSessions()
+}
+
+async function toggleFavoriteCurrent() {
+  if (!currentSessionId) return
+  const all = await fetchSessions()
+  const row = all.find((s) => s.id === currentSessionId)
+  const next = !row?.favorite
+  await post("/session/favorite", { id: currentSessionId, favorite: next })
+  status.content = next ? "ai-dj  added to favourites" : "ai-dj  removed from favourites"
 }
 
 function cancelAnim(complete: boolean) {
@@ -598,6 +803,25 @@ renderer.keyInput.on("keypress", (key) => {
     key.stopPropagation()
     return
   }
+  if (key.ctrl && (key.name === "l" || key.sequence === "\u000c")) {
+    if (sessionsOpen) closeSessions()
+    else void openSessions()
+    key.stopPropagation()
+    return
+  }
+  if (sessionsOpen) {
+    if (key.name === "escape") closeSessions()
+    else if (key.name === "up" || key.name === "k") sessionsMove(-1)
+    else if (key.name === "down" || key.name === "j") sessionsMove(1)
+    else if (key.name === "return" || key.name === "kpenter") void sessionsLoad()
+    else if (key.name === "f") sessionsToggleFavorite()
+    else if (key.name === "n") {
+      const cur = sessions[sessionsIndex]
+      if (cur) promptNameSession(cur.id, cur.name || cur.id)
+    }
+    key.stopPropagation()
+    return
+  }
   if (paletteOpen) {
     if (key.name === "escape") {
       closePalette()
@@ -652,6 +876,8 @@ renderer.keyInput.on("keypress", (key) => {
     applyScript()
   } else if (key.ctrl && (key.name === "p" || key.sequence === "\u0010")) {
     togglePause()
+  } else if (key.ctrl && (key.name === "o" || key.sequence === "\u000f")) {
+    toggleAutopilot()
   } else if (key.ctrl && (key.name === "y" || key.sequence === "\u0019")) {
     copySelection()
   } else if (key.ctrl && (key.name === "c" || key.sequence === "\u0003")) {
@@ -678,10 +904,16 @@ async function poll() {
     const s = (await r.json()) as Record<string, any>
     if (destroyed) return
     paused = !!s.paused
+    autopilot = s.autopilot !== false
+    currentSessionId = typeof s.session_id === "string" ? s.session_id : currentSessionId
     togglePauseCommand.label = paused ? "Continue music" : "Pause music"
+    toggleAutopilotCommand.label = autopilot
+      ? "Freeze the script (AI off)"
+      : "Unfreeze the script (AI on)"
     const state = paused ? "⏸ paused" : s.running ? "● playing" : "○ idle"
     const line =
-      `ai-dj ${state}  ${s.bpm ?? "?"}bpm  ${s.key ?? "?"} ${s.mode ?? ""}  ` +
+      `ai-dj ${state}${autopilot ? "" : " · frozen"}  ${s.bpm ?? "?"}bpm  ` +
+      `${s.key ?? "?"} ${s.mode ?? ""}  ` +
       `energy ${s.energy ?? "?"}  ${s.section ?? ""}  ·  ${s.model ?? ""}  ·  ${s.last_action ?? ""}`
     status.content = truncate(line, renderer.width)
 

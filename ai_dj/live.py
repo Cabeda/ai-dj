@@ -157,6 +157,10 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     # Pausing silences the set and freezes the loop — no capture, no model call
     # — until the user continues. A boxed flag so the closures below share it.
     paused = [False]
+    # Autopilot off keeps playing the current script but stops the DJ changing
+    # it: the set only moves when the user edits it. Distinct from pause, which
+    # also silences the audio.
+    autopilot = [True]
 
     def log(line):
         # TUI owns the terminal — never print there; stdout collides with OpenTUI.
@@ -171,7 +175,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                               bpm=state.bpm, key=state.key, mode=state.mode,
                               energy=round(state.energy, 2), section=state.section,
                               layers=list(state.layers), last_action=state.last_action,
-                              script=script, paused=paused[0])
+                              script=script, paused=paused[0],
+                              autopilot=autopilot[0],
+                              session_id=os.path.basename(sess_path))
 
     def play_live(code):
         """Play unless paused. Silence is the point of a pause, so the loop's
@@ -306,6 +312,35 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 if np:
                     np.update(state="playing")
                 sync_state(script)
+        elif cmd == "autopilot-off":
+            if autopilot[0]:
+                autopilot[0] = False
+                state.last_action = "autopilot off — the script is frozen"
+                log("[cmd] autopilot off: the DJ will not change the set")
+                sync_state(script)
+        elif cmd == "autopilot-on":
+            if not autopilot[0]:
+                autopilot[0] = True
+                state.last_action = "autopilot on"
+                log("[cmd] autopilot on: the DJ is evolving the set again")
+                sync_state(script)
+
+    def handle_remote(cmd):
+        """A media key / Control Center press. Handled in the watcher so it
+        lands in ~0.2s instead of waiting for the next tick (up to 10s)."""
+        if cmd == "play":
+            run_command("resume")
+        elif cmd == "pause":
+            run_command("pause")
+        elif cmd == "toggle":
+            run_command("resume" if paused[0] else "pause")
+        elif cmd == "next":
+            state.advance_section()
+            if np:
+                np.update(title=f"{session_label} · {state.section}",
+                          state="paused" if paused[0] else "playing")
+            log(f"[nowplaying] next -> {state.section}")
+            sync_state(script)
 
     wake = threading.Event()
 
@@ -318,6 +353,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     apply_manual(manual)
                 for cmd in control.drain_commands():
                     run_command(cmd)
+                if np:
+                    for remote in np.drain():
+                        handle_remote(remote)
                 if control.has_feedback():
                     wake.set()
             except BackendClosed:
@@ -375,26 +413,21 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             ticks += 1
             rev_before = manual_rev[0]
 
-            # media keys / Control Center, handled before the pause check so
-            # "play" can wake a paused set
-            if np:
-                for remote in np.drain():
-                    if remote == "play":
-                        run_command("resume")
-                    elif remote == "pause":
-                        run_command("pause")
-                    elif remote == "toggle":
-                        run_command("resume" if paused[0] else "pause")
-                    elif remote == "next":
-                        state.advance_section()
-                        np.update(title=f"{session_label} · {state.section}",
-                                  state="paused" if paused[0] else "playing")
-                        log(f"[nowplaying] next -> {state.section}")
-                        sync_state(script)
-
             if paused[0]:
                 # silence is already in effect; skip capture, the model call
                 # and playback. Queued feedback waits for the resume.
+                continue
+
+            if not autopilot[0]:
+                # frozen: keep playing and keep the section display moving, but
+                # let nothing but a manual edit change the script
+                if control:
+                    control.drain_feedback()
+                if state.section_elapsed() >= state.section_seconds():
+                    state.advance_section()
+                    if np:
+                        np.update(title=f"{session_label} · {state.section}")
+                    sync_state(script)
                 continue
 
             items = control.drain_feedback() if control else []

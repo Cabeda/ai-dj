@@ -7,6 +7,7 @@ duplicated in the UI.
 
 import http.server
 import json
+import os
 import threading
 
 
@@ -76,6 +77,43 @@ class Control:
             return {**self.state, "log": self.log_lines[-200:],
                     "feedback": list(self.feedback)}
 
+    # -- sessions (the browser modal) ---------------------------------------
+    def sessions(self):
+        """Every saved session, newest first with favourites on top, each with
+        a preview of its latest script."""
+        from . import session as session_mod
+
+        out = []
+        for s in session_mod.list_sessions():
+            out.append({**s, "preview": session_mod.preview(s["path"])})
+        return out
+
+    def name_session(self, session_id, name):
+        from . import session as session_mod
+
+        path = os.path.join(session_mod.BASE, os.path.basename(session_id or ""))
+        if os.path.isdir(path):
+            session_mod.save_meta(path, name=(name or "").strip()[:80])
+
+    def favorite_session(self, session_id, favorite):
+        from . import session as session_mod
+
+        path = os.path.join(session_mod.BASE, os.path.basename(session_id or ""))
+        if os.path.isdir(path):
+            session_mod.save_meta(path, favorite=bool(favorite))
+
+    def load_session(self, session_id):
+        """Queue a saved session's latest script as a manual edit, so the
+        running set adopts it (the same path as pasting it into the editor)."""
+        from . import session as session_mod
+
+        try:
+            _, script = session_mod.load_latest(os.path.basename(session_id or ""))
+        except (FileNotFoundError, OSError):
+            return False
+        self.push_manual_script(script)
+        return True
+
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     control = None
@@ -93,6 +131,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/state"):
             self._send(200, self.control.snapshot())
+        elif self.path.startswith("/sessions"):
+            self._send(200, {"sessions": self.control.sessions()})
         elif self.path == "/health":
             self._send(200, {"ok": True})
         else:
@@ -113,6 +153,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith("/command"):
             self.control.push_command(data.get("cmd", ""))
             self._send(200, {"ok": True})
+        elif self.path.startswith("/session/name"):
+            self.control.name_session(data.get("id", ""), data.get("name", ""))
+            self._send(200, {"ok": True})
+        elif self.path.startswith("/session/favorite"):
+            self.control.favorite_session(data.get("id", ""), data.get("favorite", False))
+            self._send(200, {"ok": True})
+        elif self.path.startswith("/session/load"):
+            ok = self.control.load_session(data.get("id", ""))
+            self._send(200 if ok else 404, {"ok": ok})
         else:
             self._send(404, {"error": "not found"})
 
