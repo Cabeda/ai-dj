@@ -177,6 +177,9 @@ const logPanel = new BoxRenderable(renderer, {
   titleAlignment: "left",
   flexDirection: "column",
   overflow: "hidden",
+  // Hidden by default: the music is the point, the log is a diagnostic. Toggle
+  // it from the command palette (ctrl+k).
+  visible: false,
 })
 logPanel.add(logView)
 
@@ -249,6 +252,7 @@ let destroyed = false
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let applying = 0
 let syncedScript = DEFAULT_SCRIPT
+let logVisible = false
 let paletteOpen = false
 let paletteQuery = ""
 let paletteIndex = 0
@@ -279,6 +283,15 @@ function setLog(text: string) {
   if (stickBottom) {
     logView.scrollY = logView.maxScrollY
   }
+}
+
+// The log panel starts hidden; the palette toggles it. Keeping the label on a
+// shared object lets the palette re-render it without rebuilding the list.
+function setLogVisible(value: boolean) {
+  logVisible = value
+  logPanel.visible = value
+  toggleLogsCommand.label = value ? "Hide logs" : "Show logs"
+  status.content = `ai-dj  logs ${value ? "shown" : "hidden"}`
 }
 
 async function post(path: string, body: unknown) {
@@ -346,12 +359,18 @@ interface PaletteCommand {
   run: () => void
 }
 
+const toggleLogsCommand: PaletteCommand = {
+  label: "Show logs",
+  run: () => setLogVisible(!logVisible),
+}
+
 const paletteCommands: PaletteCommand[] = [
   { label: "Apply script", run: () => applyScript() },
   { label: "Copy script", run: () => void copyText(scriptArea.plainText, "script") },
   { label: "Copy log", run: () => void copyText(lastLog, "log") },
   { label: "Copy script + log", run: () => void copyText(`${scriptArea.plainText}\n\n--- log ---\n${lastLog}`, "script + log") },
   { label: "Copy log file path", run: () => void copyText(LOG_PATH, "log file path") },
+  toggleLogsCommand,
   {
     label: "Reset to default script",
     run: () => {
