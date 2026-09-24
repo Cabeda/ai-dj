@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="440" viewBox="0 0 980 440" role="img">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7"
+          markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#55606d"/>
+  </marker>
+  <marker id="arrow-accent" viewBox="0 0 10 10" refX="8.5" refY="5"
+          markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8ad4ff"/>
+  </marker>
+  <marker id="arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5"
+          markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#7CFFB2"/>
+  </marker>
+</defs>
+<rect width="980" height="440" fill="#0d0f12"/>
+<text x="48" y="46" font-family="Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#d7e0ea" text-anchor="start" opacity="1.0">Architecture</text>
+<text x="48" y="70" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#7f8b99" text-anchor="start" opacity="1.0">the orchestrator never depends on a sound engine</text>
+<rect x="40" y="112" width="175" height="88" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="127.5" y="152.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">TUI</text><text x="127.5" y="172.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">OpenTUI · Bun</text><rect x="42" y="124" width="4" height="64" rx="2" fill="#8ad4ff" stroke="none" stroke-width="0" opacity="1.0"/>
+<rect x="255" y="112" width="175" height="88" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="342.5" y="144.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">Control server</text><text x="342.5" y="164.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">HTTP /state</text><text x="342.5" y="180.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">/feedback</text>
+<rect x="470" y="96" width="195" height="120" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="567.5" y="144.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">DJ loop</text><text x="567.5" y="164.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">state · sections</text><text x="567.5" y="180.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">casting · evolve</text><rect x="472" y="108" width="4" height="96" rx="2" fill="#8ad4ff" stroke="none" stroke-width="0" opacity="1.0"/>
+<polyline points="215,146 255,146" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<polyline points="255,166 215,166" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<rect x="217.24" y="114.5" width="35.52" height="20.5" rx="5" fill="#0d0f12" stroke="none" stroke-width="0" opacity="0.92"/><text x="235" y="132" font-family="Helvetica, Arial, sans-serif" font-size="10.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">poll</text>
+<polyline points="430,156 470,156" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<polyline points="665,132 700,132 700,102 735,102" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<polyline points="665,180 700,180 700,238 735,238" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<rect x="674" y="132" width="116.72000000000001" height="21" rx="5" fill="#0d0f12" stroke="none" stroke-width="0" opacity="0.92"/><text x="674" y="150" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" fill="#8ad4ff" text-anchor="start" opacity="1.0">SoundBackend seam</text>
+<rect x="735" y="60" width="205" height="84" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="837.5" y="98.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">Strudel host</text><text x="837.5" y="118.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">Bun · stdio JSON</text><rect x="737" y="72" width="4" height="60" rx="2" fill="#7CFFB2" stroke="none" stroke-width="0" opacity="1.0"/>
+<rect x="735" y="196" width="205" height="84" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="837.5" y="234.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">Sonic Pi</text><text x="837.5" y="254.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">daemon · OSC</text>
+<rect x="360" y="300" width="180" height="80" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="450.0" y="336.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">Sessions</text><text x="450.0" y="356.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">versioned scripts</text>
+<rect x="580" y="300" width="180" height="80" rx="11" fill="#12151a" stroke="#2a3138" stroke-width="1.5" opacity="1.0"/><text x="670.0" y="336.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#d7e0ea" text-anchor="middle" opacity="1.0">LLM client</text><text x="670.0" y="356.0" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">audio + state → patch</text>
+<polyline points="520,216 520,300" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<polyline points="620,216 620,300" fill="none" stroke="#55606d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" opacity="1.0"/>
+<text x="670" y="400" font-family="Menlo, Consolas, monospace" font-size="11" font-weight="normal" fill="#7f8b99" text-anchor="middle" opacity="1.0">opencode Zen Go · llama.cpp</text>
+</svg>
