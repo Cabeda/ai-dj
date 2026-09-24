@@ -318,28 +318,47 @@ def seed_script(prompt, key, model=DEFAULT_MODEL, session_id=None,
 def evolve_layer(audio_path, key, model=DEFAULT_MODEL, session_id=None,
                  state_context="", layer="", direction="", layer_code=None,
                  feedback=None, provider="go", base_url=None, reference=True,
-                 reasoning="none", lang=DEFAULT_LANG):
+                 reasoning="none", lang=DEFAULT_LANG, whole_set=False):
     """Send the state + one layer's code + audio; get a single-layer patch.
 
     Input is bounded: system (cached) + compact state + one layer + audio.
+
+    whole_set: the "layer" is the entire script (an opaque set the user pasted),
+    so ask for a complete replacement instead of a single-layer patch — the
+    layer prompt forbids stack()/setcpm() and would strip the set bare.
     """
-    lines = [f"Session state: {state_context}",
-             f"Change layer: {layer}",
-             f"Direction: {direction}"]
-    if layer_code:
-        lines.append(f"Current code for '{layer}':\n```ruby\n{layer_code}\n```")
+    if whole_set:
+        system = _system("seed", lang, reference, anchored=True)
+        lines = [
+            f"Session state: {state_context}",
+            f"Evolve the whole set — direction: {direction}.",
+            "The set is ONE script. Change it in that direction and return the "
+            "complete updated script, keeping everything you are not changing "
+            "(including any samples()/setcpm() lines and the overall structure).",
+            f"Current script:\n```\n{layer_code or ''}\n```",
+        ]
+        if feedback:
+            lines.append(f"User feedback (act on it): {feedback}")
+        lines.append("Here is a 10s sample of the current output.")
     else:
-        lines.append(f"Current code for '{layer}': none yet — create it.")
-    if feedback:
-        lines.append(f"User feedback (act on it): {feedback}")
-    lines.append("Here is a 10s sample of the current output.")
+        system = _system("evolve", lang, reference)
+        lines = [f"Session state: {state_context}",
+                 f"Change layer: {layer}",
+                 f"Direction: {direction}"]
+        if layer_code:
+            lines.append(f"Current code for '{layer}':\n```ruby\n{layer_code}\n```")
+        else:
+            lines.append(f"Current code for '{layer}': none yet — create it.")
+        if feedback:
+            lines.append(f"User feedback (act on it): {feedback}")
+        lines.append("Here is a 10s sample of the current output.")
 
     user_content = [{"type": "text", "text": "\n\n".join(lines)},
                     _audio_part(audio_path)]
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _system("evolve", lang, reference)},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ],
         "max_tokens": 8000,

@@ -77,6 +77,11 @@ render audio. Run a single module while iterating:
   prompt-cached. Everything variable goes in the user message.
 - **Validate before mutating.** A bad patch must never overwrite the last-good
   layers.
+- **A pasted script is the set.** If a script does not decompose into
+  `// layer:` blocks it is *opaque* (`DJState.opaque`): kept verbatim and
+  evolved as one piece (`WHOLE_LAYER`). Never rebuild an opaque set from the
+  layer model — that resurrects the previous set, which the user hears as both
+  sets playing at once.
 - **`strudel/*.bundle.mjs` is generated and gitignored.** Edit the `.ts`, run
   `strudel/build.sh`.
 - **stdout is the protocol.** The Strudel host and renderer must never write

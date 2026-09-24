@@ -28,6 +28,9 @@ BUILD_ORDER = ["hats", "perc", "bass", "pad", "arp", "lead", "fx", "sub", "drone
 REDUCE_ORDER = ["lead", "arp", "fx", "perc", "hats", "drone", "sub", "pad", "bass"]
 CORE_LAYERS = {"kick", "bass"}
 
+# the single "layer" an opaque set is evolved as
+WHOLE_LAYER = "set"
+
 
 def _align_strudel_identity(code, key, mode):
     """Rewrite a Strudel layer so its tonality matches the session.
@@ -93,7 +96,7 @@ def parse_header(script):
 
 class DJState:
     def __init__(self, bpm, key, mode, layers, energy=0.35, mood="",
-                 section_index=0, model="", lang="sonic_pi"):
+                 section_index=0, model="", lang="sonic_pi", opaque=False):
         self.bpm = int(bpm)
         self.key = key
         self.mode = mode
@@ -108,6 +111,11 @@ class DJState:
         self.last_layer = None
         self.history = []
         self.rng = random.Random(bpm * 1000 + len(layers))
+        # An opaque set is a whole script the user pasted (or that we resumed)
+        # which does not decompose into `// layer:` blocks. It is the source of
+        # truth: rendered verbatim, and evolved as one piece — never rebuilt
+        # from the layer model, which would resurrect the previous set.
+        self.opaque = opaque
 
     # -- section / energy ---------------------------------------------------
     @property
@@ -138,6 +146,15 @@ class DJState:
         """Deterministically choose the layer and direction for the next step."""
         target = self.target_energy()
         delta = target - self.energy
+        if self.opaque:
+            # one piece: never add or drop "layers" it does not have
+            if delta > 0.08:
+                direction = "build"
+            elif delta < -0.08:
+                direction = "reduce"
+            else:
+                direction = "vary"
+            return {"layer": WHOLE_LAYER, "direction": direction}
         if delta > 0.08:
             direction = "build"
             layer = next((l for l in BUILD_ORDER if l not in self.layers), None)
@@ -168,6 +185,11 @@ class DJState:
         kind = op.get("kind", "modify")
         layer = op.get("layer") or self.last_layer
         ruby = (decided.get("ruby") or "").strip()
+        if self.opaque:
+            # the set is one piece: a patch can only replace it wholesale, and
+            # a model that names some other "layer" must not add one (render()
+            # would ignore it and the change would silently vanish)
+            kind, layer = "modify", WHOLE_LAYER
         if kind == "remove" and layer:
             self.layers.pop(layer, None)
         elif layer and ruby:
@@ -230,6 +252,9 @@ class DJState:
             f"last action: {self.last_action or 'none'}")
 
     def render(self):
+        if self.opaque:
+            # the user's own script, played as-is
+            return self.layers.get(WHOLE_LAYER, "")
         if self.lang == "strudel":
             return self._render_strudel()
         header = (
@@ -256,6 +281,23 @@ class DJState:
             parts.append(f"  // layer: {name}\n  {code}")
         return header + ",\n".join(parts) + "\n)\n"
 
+    def set_manual(self, script):
+        """Adopt a script the user wrote.
+
+        If it decomposes into `// layer:` blocks we keep evolving it layer by
+        layer. Otherwise it is opaque: kept verbatim, and evolved as one piece.
+        Either way the previous layer model is dropped — otherwise the next
+        render would resurrect the old set.
+        """
+        layers = parse_layers(script, self.lang)
+        if layers:
+            self.layers = layers
+            self.opaque = False
+        else:
+            self.layers = {WHOLE_LAYER: script}
+            self.opaque = True
+        self.last_layer = None
+
     @classmethod
     def from_script(cls, script, model="", lang="sonic_pi"):
         layers = parse_layers(script, lang)
@@ -264,10 +306,11 @@ class DJState:
             bpm=int(h.get("bpm", 120)),
             key=h.get("key", "a"),
             mode=h.get("mode", "minor"),
-            layers=layers,
+            layers=layers if layers else ({WHOLE_LAYER: script} if script.strip() else {}),
             energy=float(h.get("energy", 0.35)),
             model=model,
             lang=lang,
+            opaque=not layers and bool(script.strip()),
         )
 
     def adopt_seed(self, ruby, hearing=None, lang=None, keep_identity=False):

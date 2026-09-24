@@ -126,6 +126,66 @@ class StrudelStateTests(unittest.TestCase):
                             'note("c3 e3").s("gm_piano").gain(0.4)')
         self.assertIn(".gain(", state.layers["piano"])
 
+    # -- pasting a whole script (opaque sets) -------------------------------
+
+    PASTED = (
+        "// \"Night ride\"\n"
+        "samples('github:eddyflux/crate')\n"
+        "setcps(.75)\n"
+        "stack(\n"
+        "  s(\"bd\").bank('crate'),\n"
+        "  note(\"c3 e3\").s(\"gm_epiano1\")\n"
+        ")\n"
+    )
+
+    def _state_with_old_layers(self):
+        return DJState(bpm=120, key="c", mode="minor",
+                       layers={"kick": 's("RolandTR909_bd")',
+                               "bass": 'note("c2").s("sawtooth")'},
+                       lang="strudel")
+
+    def test_a_pasted_script_is_kept_verbatim(self):
+        state = self._state_with_old_layers()
+        state.set_manual(self.PASTED)
+        self.assertTrue(state.opaque)
+        self.assertEqual(state.render(), self.PASTED)
+
+    def test_a_pasted_script_does_not_resurrect_the_old_layers(self):
+        # Regression: the manual path only replaced state.layers when the
+        # script decomposed into `// layer:` blocks. A pasted script does not,
+        # so the old layers survived and the next render switched the set back
+        # to the previous music (heard as both sets playing at once).
+        state = self._state_with_old_layers()
+        state.set_manual(self.PASTED)
+        self.assertNotIn("RolandTR909_bd", state.render())
+        self.assertNotIn("sawtooth", state.render())
+
+    def test_a_script_with_markers_stays_layer_based(self):
+        marked = ('stack(\n'
+                  '  // layer: kick\n  s("bd"),\n'
+                  '  // layer: bass\n  note("c2")\n)\n')
+        state = self._state_with_old_layers()
+        state.set_manual(marked)
+        self.assertFalse(state.opaque)
+        self.assertEqual(set(state.layers), {"kick", "bass"})
+
+    def test_an_opaque_set_is_evolved_as_one_piece(self):
+        state = self._state_with_old_layers()
+        state.set_manual(self.PASTED)
+        plan = state.plan_next()
+        self.assertEqual(plan["layer"], "set")
+        # a model naming some other layer must still replace the whole set,
+        # or render() would ignore the change
+        state.apply_op({"op": {"kind": "modify", "layer": "kick"},
+                        "ruby": "stack(s('bd*4'))",
+                        "decision": {"action": "more drums"}})
+        self.assertEqual(state.render(), "stack(s('bd*4'))")
+
+    def test_resuming_an_opaque_script_is_detected(self):
+        state = DJState.from_script(self.PASTED, lang="strudel")
+        self.assertTrue(state.opaque)
+        self.assertEqual(state.render(), self.PASTED)
+
 
 if __name__ == "__main__":
     unittest.main()

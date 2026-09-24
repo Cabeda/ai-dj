@@ -129,8 +129,11 @@ paused session costs nothing and continues exactly where it left off.
 
 Drag to select with the mouse and your terminal copies natively — the TUI does
 not capture the mouse. To **swap in a whole new script**, use the palette's
-*Paste script from clipboard* (one step), or `ctrl+a` then paste. The **log is
-hidden by default**; toggle it from the command palette:
+*Paste script from clipboard* (one step), or `ctrl+a` then paste. A script you
+paste *is* the set from then on: it plays immediately, and if it is a complete
+program of its own the DJ evolves it as one piece rather than rebuilding it
+from the generated layers. The **log is hidden by default**; toggle it from the
+command palette:
 
 <div align="center">
 

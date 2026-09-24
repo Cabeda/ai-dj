@@ -23,7 +23,7 @@ import time
 
 from . import llm, session
 from .backend import BackendClosed, SonicPiBackend
-from .state import DJState, parse_layers
+from .state import DJState
 from .templates import default_layers, random_layers
 from .strudel_templates import build as strudel_build, archetype_name
 
@@ -273,16 +273,18 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 log(f"[manual] {why}")
                 sync_state(script)
                 return
-            layers = parse_layers(manual)
-            if layers:
-                state.layers = layers
+            # the user's script is now the set: keep it verbatim if it does not
+            # decompose into layers, so the next render cannot resurrect the
+            # previous one
+            state.set_manual(manual)
             state.last_action = "manual edit"
             script = manual
             session.save_script(sess_path, script, lang=lang)
             sync_state(script)
             prev_sig = None
             manual_rev[0] += 1
-        log(f"[manual] applied user edit ({len(state.layers)} layers)")
+        log(f"[manual] applied user edit ({len(state.layers)} layers"
+            + (", opaque set" if state.opaque else "") + ")")
 
     def run_command(cmd):
         if cmd in ("pause", "stop"):
@@ -502,7 +504,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     layer_code=state.layers.get(plan["layer"]),
                     feedback=feedback or None,
                     provider=provider, base_url=base_url,
-                    reference=reference, reasoning=reasoning, lang=lang)
+                    reference=reference, reasoning=reasoning, lang=lang,
+                    whole_set=state.opaque)
             except Exception as e:
                 log(f"[llm] ERROR: {e} — deterministic fallback")
                 if state.variation():
