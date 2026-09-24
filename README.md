@@ -95,25 +95,40 @@ echo 'export OPENCODE_API_KEY="sk-..."' > ~/env
 ### Run
 
 ```bash
-ai-dj tui --prompt "deep focus"
+ai-dj tui
 ```
+
+Nothing plays until you pick a **starting point** — the picker lists the
+archetypes by group, your recent sets, and *Surprise me* (let the model write
+the opening set from scratch). Choose one and the set starts.
 
 Prefer no install? The repo ships a launcher that runs straight from a checkout:
 
 ```bash
-./ai-dj tui --prompt "synthwave"
+./ai-dj tui
+```
+
+Skip the picker by naming the start up front:
+
+```bash
+ai-dj archetypes                      # what you can start from
+ai-dj tui --archetype downtempo       # a named template
+ai-dj tui --prompt "deep focus"       # a vibe guide for the model
+ai-dj tui --surprise                  # let the model write it
+ai-dj pick <session-id>               # resume a saved set
 ```
 
 Hear a starter without any model or audio, to check your setup:
 
 ```bash
-./ai-dj dry --seed 1
+./ai-dj dry --archetype techno
 ```
 
 ## The TUI
 
 | Key | Action |
 |---|---|
+| `↑`/`↓` + `enter` | pick a starting point (at launch) |
 | `shift+enter` | apply the script you edited |
 | `ctrl+a` | select the whole script — then type or paste to replace it |
 | `ctrl+p` | pause / continue — silences the set and freezes the loop |
@@ -205,11 +220,13 @@ The palette is generated into the model's prompt at build time
 plays. The sample banks the palette names are prebaked by the host, so a set can
 use them without a `samples(...)` call of its own.
 
-**16 archetypes** cover focus and classical material — `deep_focus`, `drone`,
-`lofi_study`, `piano_study`, `vibes_room`, `marimba_room`, `string_quartet`,
-`chamber`, `orchestral`, `solo_piano`, `harp_strings`, `ambient`, `techno`,
-`house`, `downtempo`, `synthwave`. A test enforces that **no archetype uses a
-vocal patch**.
+**16 archetypes** cover focus and classical material, grouped as `electronic`
+(techno, house, downtempo, synthwave), `focus` (ambient, deep_focus, drone,
+lofi_study, piano_study, vibes_room, marimba_room) and `classical`
+(string_quartet, chamber, orchestral, solo_piano, harp_strings). `ai-dj
+archetypes` lists them; the TUI picker shows the same list at startup, so you
+never have to start from something random. A test enforces that **no archetype
+uses a vocal patch**.
 
 ## Configuration
 
@@ -229,8 +246,10 @@ ai-dj tui --local --model <name>
 | Flag | Meaning |
 |---|---|
 | `--backend {strudel,sonic_pi}` | sound engine (default `strudel`) |
-| `--prompt "..."` | initial vibe guide |
-| `--seed N` | deterministic archetype choice |
+| `--archetype NAME` | start from this template (`ai-dj archetypes`) |
+| `--prompt "..."` | start from a vibe guide for the model |
+| `--surprise` | let the model write the opening set |
+| `--seed N` | deterministic archetype choice instead of the picker |
 | `--record [DIR]` | save every capture as a WAV (default `<session>/audio`) |
 | `--reasoning {none,low,medium,high}` | reasoning effort (default `none`) |
 | `--no-reference` | drop the language reference from the prompt |
@@ -239,13 +258,14 @@ ai-dj tui --local --model <name>
 ### Commands
 
 ```
-ai-dj tui [--prompt V]     live TUI: editable script + queued feedback
-ai-dj new [--seed N]       fresh session, live-coded, in the terminal
+ai-dj tui [--archetype N]  live TUI: pick a starting point, edit, send feedback
+ai-dj new [--archetype N]  fresh session, live-coded, in the terminal
+ai-dj archetypes           list the starting points
 ai-dj pick <session-id>    resume a saved session
 ai-dj list                 list saved sessions
 ai-dj models               list models on the local llama.cpp server
 ai-dj probe [--audio F]    one-shot listen + decide
-ai-dj dry [--seed N]       render a random starter, no audio
+ai-dj dry [--archetype N]  render a starter, no audio
 ```
 
 ## Sessions

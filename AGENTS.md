@@ -92,6 +92,12 @@ render audio. Run a single module while iterating:
 - **Three loop modes, and they are different.** `paused` silences the set and
   freezes the loop; `autopilot` off keeps playing but stops the DJ changing the
   script; neither is the same as the process stopping.
+- **Nothing plays until a starting point is chosen.** The TUI shows the picker
+  while `Control.awaiting_start` is true, and `tui.launch` does not call
+  `live.run` until `Control.await_start()` returns. Command-line
+  `--archetype`/`--prompt`/`--seed`/session means `mark_started()` and goes
+  straight in. Every archetype belongs to exactly one `ARCHETYPE_GROUPS` entry
+  (a test enforces it) so the picker cannot silently drop one.
 
 ## Gotchas
 
