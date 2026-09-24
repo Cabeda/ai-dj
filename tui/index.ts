@@ -54,13 +54,16 @@ stack(
 )`
 
 const renderer = await createCliRenderer({
+  // ctrl+c quits (we handle it so we can restore the terminal ourselves), and
+  // no signal shortcuts, so the quit path is always ours
   exitOnCtrlC: false,
   exitSignals: [],
   backgroundColor: "#0d0f12",
-  // Leave the mouse to the terminal: with reporting off, a drag is a native
-  // selection, so Ghostty's copy-on-select works. Clean-text copies still go
-  // through ctrl+y / the command palette.
-  useMouse: false,
+  // Capture the mouse so a drag is an *in-app* selection: that is what lets you
+  // select a passage and delete just that. Copy-on-select (below) keeps the
+  // terminal behaviour of copying what you highlight; Shift+drag still hands
+  // the selection to the terminal itself.
+  useMouse: true,
   enableMouseMovement: false,
 })
 
@@ -156,7 +159,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "shift+enter apply  ·  ctrl+p pause  ·  select text to copy  ·  ctrl+k commands  ·  ctrl+q quit",
+  content: "shift+enter apply  ·  shift+arrows select · del removes it (copies on select)  ·  ctrl+p pause  ·  ctrl+k commands  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -867,6 +870,19 @@ scriptArea.on("focused", () => {
   if (animTimer) cancelAnim(true)
 })
 
+// Select-to-copy: a drag highlights a passage and the clipboard gets it, the
+// way a terminal behaves. The selection stays live, so Backspace/Delete then
+// removes just that passage.
+scriptArea.onMouseUp = () => {
+  if (scriptArea.hasSelection()) void copyText(scriptArea.getSelectedText(), "selection")
+}
+logView.onMouseUp = () => {
+  if (logView.hasSelection()) void copyText(logView.getSelectedText(), "log selection")
+}
+feedback.onMouseUp = () => {
+  if (feedback.hasSelection()) void copyText(feedback.getSelectedText(), "feedback selection")
+}
+
 function stopTimers() {
   destroyed = true
   if (animTimer) {
@@ -1012,8 +1028,9 @@ renderer.keyInput.on("keypress", (key) => {
   } else if (key.ctrl && (key.name === "y" || key.sequence === "\u0019")) {
     copySelection()
   } else if (key.ctrl && (key.name === "c" || key.sequence === "\u0003")) {
-    // a selection means "copy"; otherwise copy the focused pane
-    copySelection()
+    // ctrl+c quits, as everywhere else — copy is ctrl+y, or your terminal's
+    // own select-to-copy (the TUI does not capture the mouse)
+    destroyAll()
   } else if (key.ctrl && (key.name === "q" || key.sequence === "\u0011")) {
     destroyAll()
   } else if (key.name === "tab") {

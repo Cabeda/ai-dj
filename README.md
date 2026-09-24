@@ -131,6 +131,8 @@ Hear a starter without any model or audio, to check your setup:
 | `↑`/`↓` + `enter` | pick a starting point (at launch) |
 | `shift+enter` | apply the script you edited |
 | `ctrl+a` | select the whole script — then type or paste to replace it |
+| `shift+arrows` / drag | select a passage (it is copied as you select) |
+| `backspace` / `delete` | remove just the selection |
 | `ctrl+p` | pause / continue — silences the set and freezes the loop |
 | `ctrl+o` | freeze / unfreeze — keep playing, but stop the AI changing it |
 | `ctrl+l` | browse past sessions — name them, favourite them, load one |
@@ -139,7 +141,7 @@ Hear a starter without any model or audio, to check your setup:
 | `ctrl+y` | copy the focused pane as clean text |
 | `ctrl+k` | command palette — paste/select the script, copy, reset, modes, sessions, **show/hide logs** |
 | `tab` | switch between the script and the feedback box |
-| `ctrl+q` | quit |
+| `ctrl+c` / `ctrl+q` | quit |
 
 **Pause** stops the audio *and* the loop — no captures, no model calls — so a
 paused session costs nothing and continues exactly where it left off. Applying
@@ -149,13 +151,14 @@ request to hear it.
 script, so the set only changes when you edit it. The status bar shows
 `· frozen` while it is on.
 
-Drag to select with the mouse and your terminal copies natively — the TUI does
-not capture the mouse. To **swap in a whole new script**, use the palette's
-*Paste script from clipboard* (one step), or `ctrl+a` then paste. A script you
-paste *is* the set from then on: it plays immediately, and if it is a complete
-program of its own the DJ evolves it as one piece rather than rebuilding it
-from the generated layers. The **log is hidden by default**; toggle it from the
-command palette:
+Selecting text behaves like a terminal: a drag (or `shift+arrows`) highlights a
+passage and puts it on the clipboard, and `backspace`/`delete` then removes just
+that passage. Hold `shift` while dragging to hand the selection to your terminal
+instead. To **swap in a whole new script**, use the palette's *Paste script from
+clipboard* (one step), or `ctrl+a` then paste. A script you paste *is* the set
+from then on: it plays immediately, and if it is a complete program of its own
+the DJ evolves it as one piece rather than rebuilding it from the generated
+layers. The **log is hidden by default**; toggle it from the command palette:
 
 <div align="center">
 
@@ -220,11 +223,12 @@ The palette is generated into the model's prompt at build time
 plays. The sample banks the palette names are prebaked by the host, so a set can
 use them without a `samples(...)` call of its own.
 
-**16 archetypes** cover focus and classical material, grouped as `electronic`
+**17 archetypes** cover focus and classical material, grouped as `electronic`
 (techno, house, downtempo, synthwave), `focus` (ambient, deep_focus, drone,
 lofi_study, piano_study, vibes_room, marimba_room) and `classical`
-(string_quartet, chamber, orchestral, solo_piano, harp_strings). `ai-dj
-archetypes` lists them; the TUI picker shows the same list at startup, so you
+(string_quartet, chamber, orchestral, solo_piano, harp_strings, fur_elise).
+`fur_elise` starts with Beethoven's opening refrain in A minor at 60 BPM.
+`ai-dj archetypes` lists them; the TUI picker shows the same list at startup, so you
 never have to start from something random. A test enforces that **no archetype
 uses a vocal patch**.
 

@@ -141,8 +141,10 @@ These cost real debugging time; they are not obvious from the code.
 
 **TUI (`tui/index.ts`)**
 
-- The TUI **does not capture the mouse** (`useMouse: false`) on purpose, so
-  terminal-native select-to-copy works. `ctrl+y` copies clean text.
+- The TUI **captures the mouse** so a drag is an in-app selection: that is what
+  lets you select a passage and delete just it. Copy-on-select (`onMouseUp`)
+  keeps the terminal behaviour of copying what you highlight; `ctrl+y` copies
+  clean whole-pane text. `ctrl+c` quits, like everywhere else.
 - OpenTUI renders **diffs**, so raw pty bytes cannot be searched for a full
   string. To assert on the screen, use `@opentui/core/testing`'s
   `createTestRenderer().captureCharFrame()`.
