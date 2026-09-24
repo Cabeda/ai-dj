@@ -127,7 +127,9 @@ Hear a starter without any model or audio, to check your setup:
 | `ctrl+q` | quit |
 
 **Pause** stops the audio *and* the loop — no captures, no model calls — so a
-paused session costs nothing and continues exactly where it left off.
+paused session costs nothing and continues exactly where it left off. Applying
+a script (`shift+enter`) resumes a paused set: asking for a script to play is a
+request to hear it.
 **Freeze** is different: the music keeps playing, but the DJ stops touching the
 script, so the set only changes when you edit it. The status bar shows
 `· frozen` while it is on.

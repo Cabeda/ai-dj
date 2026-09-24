@@ -263,6 +263,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             sync_state(script)
             return
         with apply_lock:
+            # Applying a script is a request to hear it: if the set was paused
+            # (ctrl+p, or the pause button in Control Center), resume. Otherwise
+            # shift+enter looks like it did nothing.
+            was_paused = paused[0]
+            paused[0] = False
             # Play first: if the engine rejects it, nothing has changed yet.
             # The old script stays current, and the reason reaches the status
             # line — a manual edit that silently does nothing is the worst
@@ -275,13 +280,15 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             except Exception as e:
                 ok, why = False, str(e)
             if not ok:
+                paused[0] = was_paused
                 state.last_action = f"manual edit failed: {why}"
                 log(f"[manual] {why}")
                 sync_state(script)
                 return
-            # the user's script is now the set: keep it verbatim if it does not
-            # decompose into layers, so the next render cannot resurrect the
-            # previous one
+            if was_paused:
+                log("[manual] resumed from pause to play the edit")
+                if np:
+                    np.update(state="playing")
             state.set_manual(manual)
             state.last_action = "manual edit"
             script = manual

@@ -84,6 +84,28 @@ class PauseTests(unittest.TestCase):
                 finally:
                     be.done = True
 
+    def test_applying_a_script_while_paused_resumes(self):
+        # Regression: shift+enter while paused adopted the script but left the
+        # audio silent, so applying an edit looked like it did nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(session, "BASE", tmp):
+                ctl, be = Control(), FakeBackend()
+                self._start(ctl, be)
+                try:
+                    time.sleep(0.5)
+                    ctl.push_command("pause")
+                    time.sleep(0.5)
+                    self.assertTrue(ctl.snapshot().get("paused"))
+
+                    ctl.push_manual_script("stack(s('bd*4'))\n")
+                    time.sleep(0.6)
+                    self.assertFalse(ctl.snapshot().get("paused"),
+                                     "applying a script left the set paused")
+                    self.assertEqual(be.plays[-1], "stack(s('bd*4'))\n",
+                                     "the applied script was not played")
+                finally:
+                    be.done = True
+
     def test_stop_is_still_an_alias_for_pause(self):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(session, "BASE", tmp):
