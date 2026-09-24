@@ -295,6 +295,38 @@ sessionsBox.add(sessionsListView)
 sessionsBox.add(sessionsPreviewView)
 renderer.root.add(sessionsBox)
 
+// Starting-point picker, shown before anything plays: a template, a saved
+// session, or let the model write it from scratch.
+const startBox = new BoxRenderable(renderer, {
+  id: "startbox",
+  position: "absolute",
+  top: 1,
+  left: "12%",
+  width: "76%",
+  height: "86%",
+  borderStyle: "rounded",
+  borderColor: "#7CFFB2",
+  title: " start ",
+  titleAlignment: "left",
+  flexDirection: "column",
+  overflow: "hidden",
+  backgroundColor: "#12151a",
+  zIndex: 110,
+  visible: false,
+})
+const startView = new TextRenderable(renderer, {
+  id: "startview",
+  content: "",
+  fg: "#d7e0ea",
+  bg: "#12151a",
+  width: "100%",
+  height: "100%",
+  wrapMode: "none",
+  overflow: "hidden",
+})
+startBox.add(startView)
+renderer.root.add(startBox)
+
 let dirty = false
 let lastLog = ""
 let scriptFocused = true
@@ -316,6 +348,9 @@ let currentSessionId = ""
 let sessionsOpen = false
 let sessions: SessionRow[] = []
 let sessionsIndex = 0
+let startOpen = false
+let startRows: StartRow[] = []
+let startIndex = 0
 let paletteOpen = false
 let palettePrompt: { label: string; submit: (value: string) => void } | null = null
 let paletteQuery = ""
@@ -684,6 +719,95 @@ async function sessionsLoad() {
   closeSessions()
 }
 
+// -- starting-point picker --------------------------------------------------
+
+interface StartRow {
+  kind: "header" | "surprise" | "archetype" | "session"
+  label: string
+  detail: string
+  payload: Record<string, unknown>
+}
+
+async function fetchArchetypes(): Promise<any[]> {
+  try {
+    const r = await fetch(URL + "/archetypes")
+    const s = (await r.json()) as { archetypes?: any[] }
+    return s.archetypes ?? []
+  } catch {
+    return []
+  }
+}
+
+async function openStart() {
+  const [archetypes, saved] = await Promise.all([fetchArchetypes(), fetchSessions()])
+  const rows: StartRow[] = [
+    { kind: "surprise", label: "Surprise me", detail: "let the model write the opening set",
+      payload: { prompt: "surprise me — pick a mood and write the opening set" } },
+  ]
+  let group = ""
+  for (const a of archetypes) {
+    if (a.group !== group) {
+      group = a.group
+      rows.push({ kind: "header", label: group, detail: "", payload: {} })
+    }
+    rows.push({
+      kind: "archetype",
+      label: String(a.name).replace(/_/g, " "),
+      detail: `${a.bpm[0]}-${a.bpm[1]}bpm · ${(a.layers ?? []).join(", ")}`,
+      payload: { archetype: a.name },
+    })
+  }
+  if (saved.length) {
+    rows.push({ kind: "header", label: "recent sets", detail: "", payload: {} })
+    for (const s of saved.slice(0, 8)) {
+      rows.push({ kind: "session", label: s.name || s.id, detail: fmtDate(s.created),
+                  payload: { session_id: s.id } })
+    }
+  }
+  startRows = rows
+  startIndex = rows.findIndex((r) => r.kind !== "header")
+  startOpen = true
+  startBox.visible = true
+  renderStart()
+}
+
+function renderStart() {
+  const lines = startRows.map((r, i) => {
+    if (r.kind === "header") return `\n  ${r.label}`
+    const mark = i === startIndex ? "▶" : " "
+    return `${mark} ${r.label.padEnd(16)}  ${r.detail}`
+  })
+  startView.content =
+    "Pick a starting point — nothing is playing yet.\n" +
+    "↑/↓ move · enter start · ctrl+l browse all sessions · ctrl+q quit\n" +
+    lines.join("\n")
+}
+
+function startMove(delta: number) {
+  if (!startRows.length) return
+  let i = startIndex
+  for (let n = 0; n < startRows.length; n++) {
+    i = (i + delta + startRows.length) % startRows.length
+    const row = startRows[i]
+    if (row && row.kind !== "header") {
+      startIndex = i
+      renderStart()
+      return
+    }
+  }
+}
+
+async function startChoose() {
+  const row = startRows[startIndex]
+  if (!row || row.kind === "header") return
+  startOpen = false
+  startBox.visible = false
+  status.content = row.kind === "session"
+    ? `ai-dj  resuming ${row.label}`
+    : `ai-dj  starting — ${row.label}`
+  await post("/start", row.payload)
+}
+
 async function toggleFavoriteCurrent() {
   if (!currentSessionId) return
   const all = await fetchSessions()
@@ -809,6 +933,13 @@ renderer.keyInput.on("keypress", (key) => {
     key.stopPropagation()
     return
   }
+  if (startOpen) {
+    if (key.name === "up" || key.name === "k") startMove(-1)
+    else if (key.name === "down" || key.name === "j") startMove(1)
+    else if (key.name === "return" || key.name === "kpenter") void startChoose()
+    key.stopPropagation()
+    return
+  }
   if (sessionsOpen) {
     if (key.name === "escape") closeSessions()
     else if (key.name === "up" || key.name === "k") sessionsMove(-1)
@@ -903,6 +1034,8 @@ async function poll() {
     const r = await fetch(URL + "/state")
     const s = (await r.json()) as Record<string, any>
     if (destroyed) return
+    // nothing is playing until a starting point is chosen: show the picker
+    if (s.awaiting_start && !startOpen) void openStart()
     paused = !!s.paused
     autopilot = s.autopilot !== false
     currentSessionId = typeof s.session_id === "string" ? s.session_id : currentSessionId

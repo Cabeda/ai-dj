@@ -179,6 +179,16 @@ _ARCHETYPES = {
 
 ARCHETYPE_NAMES = tuple(_ARCHETYPES)
 
+# Display groups for the picker and `ai-dj archetypes`. Every archetype belongs
+# to exactly one (a test enforces it) so the picker cannot silently drop one.
+ARCHETYPE_GROUPS = {
+    "electronic": ("techno", "house", "downtempo", "synthwave"),
+    "focus": ("ambient", "deep_focus", "drone", "lofi_study", "piano_study",
+              "vibes_room", "marimba_room"),
+    "classical": ("string_quartet", "chamber", "orchestral", "solo_piano",
+                  "harp_strings"),
+}
+
 
 def layers_for(archetype, key, mode):
     """Return {layer_name: pattern} for an archetype."""
@@ -255,6 +265,21 @@ def random_archetype(seed=None):
 def archetype_name(seed=None):
     """Deterministically choose an archetype name for a seed."""
     return random.Random(seed).choice(ARCHETYPE_NAMES)
+
+
+def catalogue():
+    """The starting points, for the picker and `ai-dj archetypes`."""
+    group_of = {n: g for g, names in ARCHETYPE_GROUPS.items() for n in names}
+    return [
+        {
+            "name": n,
+            "group": group_of.get(n, "other"),
+            "bpm": list(_ARCHETYPE_BPM[n]),
+            "modes": list(_ARCHETYPE_MODES[n]),
+            "layers": list(_ARCHETYPES[n]),
+        }
+        for n in ARCHETYPE_NAMES
+    ]
 
 
 def all_archetypes():

@@ -25,7 +25,7 @@ from . import llm, session
 from .backend import BackendClosed, SonicPiBackend
 from .state import DJState
 from .templates import default_layers, random_layers
-from .strudel_templates import build as strudel_build, archetype_name
+from .strudel_templates import build as strudel_build, archetype_name, ARCHETYPE_NAMES
 
 CAPTURE_SECONDS = 10
 TICK_SECONDS = 10
@@ -148,7 +148,7 @@ def _diff(a, b):
 def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         tick=TICK_SECONDS, dry=False, backend=None, provider="go", base_url=None,
         reference=True, feedback_enabled=True, reasoning="none", control=None,
-        record_dir=None):
+        record_dir=None, archetype=None):
     backend = backend or SonicPiBackend()
     lang = "strudel" if getattr(backend, "name", "") == "strudel" else "sonic_pi"
     valid = valid_strudel if lang == "strudel" else valid_ruby
@@ -197,14 +197,20 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         log(f"[session] resumed {session_id} at {ver} "
             f"({len(state.layers)} layers, {state.bpm}bpm)")
     elif lang == "strudel":
-        archetype = archetype_name(new_seed)
-        layers, info = strudel_build(archetype, seed=new_seed)
+        # an explicit starting point is used as-is; otherwise cast by seed
+        if archetype in ARCHETYPE_NAMES:
+            chosen = archetype
+        else:
+            if archetype:
+                log(f"[session] unknown archetype '{archetype}'; casting by seed")
+            chosen = archetype_name(new_seed)
+        layers, info = strudel_build(chosen, seed=new_seed)
         state = DJState(bpm=info["bpm"], key=info["key"], mode=info["mode"],
                         layers=layers, model=model, lang=lang)
         sess_path = session.create_session(info)
-        session_label = prompt or archetype.replace("_", " ")
+        session_label = prompt or chosen.replace("_", " ")
         log(f"[session] new session: {os.path.basename(sess_path)}"
-            f" | archetype: {archetype}"
+            f" | archetype: {chosen}"
             + (f" | guide: {prompt}" if prompt else ""))
     else:
         if new_seed is None:

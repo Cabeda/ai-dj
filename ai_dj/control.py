@@ -19,6 +19,34 @@ class Control:
         self.feedback = []
         self.manual_script = None
         self.commands = []
+        # The TUI picks a starting point before the loop exists; until it does,
+        # `awaiting_start` is true and nothing is playing.
+        self.start_request = None
+        self._started = threading.Event()
+
+    def request_start(self, **kw):
+        """Record the starting point the user picked. False if we already
+        started (a late click on the picker must not restart the set)."""
+        with self._lock:
+            if self._started.is_set():
+                return False
+            self.start_request = dict(kw)
+        self._started.set()
+        return True
+
+    def mark_started(self):
+        """No picker (the start was given on the command line)."""
+        self._started.set()
+
+    def await_start(self, timeout=None):
+        """Block until a starting point is known, then return it."""
+        if not self._started.wait(timeout):
+            return None
+        with self._lock:
+            return dict(self.start_request or {})
+
+    def awaiting_start(self):
+        return not self._started.is_set()
 
     def set_state(self, **kw):
         with self._lock:
@@ -75,9 +103,19 @@ class Control:
     def snapshot(self):
         with self._lock:
             return {**self.state, "log": self.log_lines[-200:],
-                    "feedback": list(self.feedback)}
+                    "feedback": list(self.feedback),
+                    "awaiting_start": not self._started.is_set()}
 
     # -- sessions (the browser modal) ---------------------------------------
+    def archetypes(self):
+        """The starting points, for the picker."""
+        from .strudel_templates import catalogue
+
+        try:
+            return catalogue()
+        except Exception:
+            return []
+
     def sessions(self):
         """Every saved session, newest first with favourites on top, each with
         a preview of its latest script."""
@@ -133,6 +171,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, self.control.snapshot())
         elif self.path.startswith("/sessions"):
             self._send(200, {"sessions": self.control.sessions()})
+        elif self.path.startswith("/archetypes"):
+            self._send(200, {"archetypes": self.control.archetypes()})
         elif self.path == "/health":
             self._send(200, {"ok": True})
         else:
@@ -162,6 +202,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith("/session/load"):
             ok = self.control.load_session(data.get("id", ""))
             self._send(200 if ok else 404, {"ok": ok})
+        elif self.path.startswith("/start"):
+            self.control.request_start(
+                archetype=data.get("archetype"),
+                prompt=data.get("prompt"),
+                session_id=data.get("session_id"))
+            self._send(200, {"ok": True})
         else:
             self._send(404, {"error": "not found"})
 

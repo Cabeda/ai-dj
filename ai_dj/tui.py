@@ -97,17 +97,28 @@ def launch(a, provider, model, base_url, key):
         sys.exit(2)
     ctl.set_state(running=True, provider=provider, model=model)
 
+    # If the start was given on the command line, go straight in. Otherwise the
+    # TUI shows the picker and nothing plays until a starting point is chosen.
+    explicit = any([getattr(a, "prompt", None), getattr(a, "seed", None),
+                    getattr(a, "archetype", None),
+                    getattr(a, "session_id", None)])
+    if explicit:
+        ctl.mark_started()
+
     def loop():
+        choice = {} if explicit else (ctl.await_start() or {})
         try:
-            live.run(key, model, a.env, new_seed=getattr(a, "seed", None),
-                     session_id=getattr(a, "session_id", None),
-                     prompt=getattr(a, "prompt", None),
+            live.run(key, model, a.env,
+                     new_seed=choice.get("seed") or getattr(a, "seed", None),
+                     session_id=choice.get("session_id") or getattr(a, "session_id", None),
+                     prompt=choice.get("prompt") or getattr(a, "prompt", None),
+                     archetype=choice.get("archetype") or getattr(a, "archetype", None),
                      tick=getattr(a, "tick", 10), backend=backend,
                      provider=provider, base_url=base_url,
                      reference=not getattr(a, "no_reference", False),
                      feedback_enabled=False,
                      reasoning=getattr(a, "reasoning", "none"), control=ctl,
-                      record_dir=getattr(a, "record", None))
+                     record_dir=getattr(a, "record", None))
         except Exception as e:
             import traceback
             ctl.log(f"[loop] fatal: {e}")

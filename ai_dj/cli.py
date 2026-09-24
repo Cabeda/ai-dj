@@ -41,11 +41,30 @@ def cmd_dry(a):
     from .state import DJState
     from .strudel_templates import archetype_name, build
 
-    name = archetype_name(a.seed)
+    name = a.archetype or archetype_name(a.seed)
     layers, info = build(name, seed=a.seed)
     state = DJState(bpm=info["bpm"], key=info["key"], mode=info["mode"],
                     layers=layers, lang="strudel")
     print(state.render())
+
+
+def cmd_archetypes(_a):
+    """List the starting points the picker offers."""
+    from .strudel_templates import ARCHETYPE_GROUPS, catalogue
+
+    by_group = {}
+    for entry in catalogue():
+        by_group.setdefault(entry["group"], []).append(entry)
+    for group in ARCHETYPE_GROUPS:
+        entries = by_group.get(group, [])
+        if not entries:
+            continue
+        print(f"{group}:")
+        for e in entries:
+            print(f"    {e['name']:15s} {e['bpm'][0]:>3}-{e['bpm'][1]}bpm  "
+                  f"{', '.join(e['modes'])}  ({', '.join(e['layers'])})")
+    print("\nstart with one:  ai-dj tui --archetype <name>")
+    print("or let the model write it:  ai-dj tui --surprise")
 
 
 def cmd_models(a):
@@ -136,6 +155,7 @@ def run_live(a, provider, model, base_url, key):
     return run(key, model, a.env, new_seed=getattr(a, "seed", None),
                session_id=getattr(a, "session_id", None),
                prompt=getattr(a, "prompt", None),
+               archetype=getattr(a, "archetype", None),
                tick=getattr(a, "tick", 10), dry=getattr(a, "dry", False),
                backend=backend, provider=provider, base_url=base_url,
                reference=not getattr(a, "no_reference", False),
@@ -178,6 +198,13 @@ def cmd_probe(a):
     print("RUBY:\n", decided.get("ruby", ""))
 
 
+def _add_start_flags(p):
+    p.add_argument("--archetype", default=None,
+                   help="starting point; see `ai-dj archetypes`")
+    p.add_argument("--surprise", action="store_true",
+                   help="let the model write the opening set from scratch")
+
+
 def _add_llm_flags(p, model_default=None):
     p.add_argument("--backend", default="strudel", choices=["strudel", "sonic_pi"],
                    help="sound backend (default strudel; sonic_pi needs the Sonic Pi app)")
@@ -211,6 +238,7 @@ def main(argv=None):
     p_new.add_argument("--output", default=None, help="audio output device (default: follow system default)")
     p_new.add_argument("--record", nargs="?", const="auto", default=None,
                        help="save each capture as WAV (default: <session>/audio)")
+    _add_start_flags(p_new)
     _add_llm_flags(p_new)
     p_new.set_defaults(fn=lambda a: run_live(a, *resolve_llm(a)))
 
@@ -228,6 +256,7 @@ def main(argv=None):
     p_tui.add_argument("--output", default=None, help="audio output device (default: follow system default)")
     p_tui.add_argument("--record", nargs="?", const="auto", default=None,
                        help="save each capture as WAV (default: <session>/audio)")
+    _add_start_flags(p_tui)
     _add_llm_flags(p_tui)
     p_tui.set_defaults(fn=lambda a: run_tui(a, *resolve_llm(a)))
 
@@ -245,9 +274,16 @@ def main(argv=None):
 
     p_dry = sub.add_parser("dry", help="render a random starter, no audio")
     p_dry.add_argument("--seed", type=int, default=None)
+    _add_start_flags(p_dry)
     p_dry.set_defaults(fn=cmd_dry)
 
+    p_arch = sub.add_parser("archetypes", help="list the starting points")
+    p_arch.set_defaults(fn=cmd_archetypes)
+
     args = ap.parse_args(argv)
+    # "surprise me" is just a seed with nothing to go on
+    if getattr(args, "surprise", False) and not getattr(args, "prompt", None):
+        args.prompt = "surprise me — pick a mood and write the opening set"
     args.fn(args)
 
 
