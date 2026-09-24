@@ -13,6 +13,12 @@ Timbre names in `s(...)` come from ai_dj.palette (Strudel realisations).
 
 import random
 
+from .fur_elise_score import (
+    FUR_ELISE_BPM,
+    FUR_ELISE_LEFT_HAND,
+    FUR_ELISE_RIGHT_HAND,
+)
+
 _KEYS = ["c", "d", "e", "f", "g", "a", "b"]
 _MODES = ["minor", "major", "dorian", "mixolydian", "aeolian"]
 _BPM_RANGE = (70, 132)
@@ -85,6 +91,9 @@ _EXTRA = {
                 '.superimpose(x => x.gain(0.35).late(0.012).pan(0.3))',
     "strings_trem": 'note("[{root}3,{third}3,{fifth}3]").s("gm_tremolo_strings")'
                 '.attack(1.5).release(5).gain(rand.range(0.16,0.24)).room(0.55).slow(8)',
+    # Complete two-hand score from the bundled LilyPond transcription.
+    "fur_elise_melody": FUR_ELISE_RIGHT_HAND,
+    "fur_elise_bass": FUR_ELISE_LEFT_HAND,
     "flute":    'n("4 2 0 2 4 7").scale("{key}:{mode}").s("gm_flute")'
                 '.attack(0.1).release(1.2).gain(rand.range(0.2,0.3)).room(0.4)',
     "folkharp": 'n("0 4 2 5 3 7").scale("{key}:{mode}").s("folkharp")'
@@ -174,6 +183,7 @@ _ARCHETYPES = {
     "orchestral":     _arch("strings", "strings_trem", "violin", "timpani", "flute"),
     "solo_piano":     _arch("piano", "harp"),
     "harp_strings":   _arch("harp", "strings", "flute"),
+    "fur_elise":      _arch("fur_elise_melody", "fur_elise_bass"),
     "marimba_room":   _arch("marimba", "sub", "vibes", "vinyl"),
 }
 
@@ -186,7 +196,7 @@ ARCHETYPE_GROUPS = {
     "focus": ("ambient", "deep_focus", "drone", "lofi_study", "piano_study",
               "vibes_room", "marimba_room"),
     "classical": ("string_quartet", "chamber", "orchestral", "solo_piano",
-                  "harp_strings"),
+                  "harp_strings", "fur_elise"),
 }
 
 
@@ -216,6 +226,7 @@ _ARCHETYPE_BPM = {
     "orchestral": (58, 80),
     "solo_piano": (60, 90),
     "harp_strings": (64, 88),
+    "fur_elise": (FUR_ELISE_BPM, FUR_ELISE_BPM),
 }
 
 # Modes that suit the archetype's mood.
@@ -236,6 +247,7 @@ _ARCHETYPE_MODES = {
     "orchestral": ["minor", "major", "aeolian"],
     "solo_piano": ["major", "minor", "dorian"],
     "harp_strings": ["major", "minor", "aeolian"],
+    "fur_elise": ["minor"],
 }
 
 
@@ -246,7 +258,7 @@ def build(archetype, seed=None, bpm=None, key=None, mode=None):
     if bpm is None:
         bpm = rng.randint(lo, hi)
     if key is None:
-        key = rng.choice(_KEYS)
+        key = "a" if archetype == "fur_elise" else rng.choice(_KEYS)
     if mode is None:
         mode = rng.choice(_ARCHETYPE_MODES[archetype])
     layers = layers_for(archetype, key, mode)

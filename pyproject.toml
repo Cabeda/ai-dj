@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = []
+score-conversion = ["lilypond-to-strudel>=0.1.0"]
 
 [project.scripts]
 ai-dj = "ai_dj.cli:main"

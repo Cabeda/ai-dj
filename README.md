@@ -227,10 +227,22 @@ use them without a `samples(...)` call of its own.
 (techno, house, downtempo, synthwave), `focus` (ambient, deep_focus, drone,
 lofi_study, piano_study, vibes_room, marimba_room) and `classical`
 (string_quartet, chamber, orchestral, solo_piano, harp_strings, fur_elise).
-`fur_elise` starts with Beethoven's opening refrain in A minor at 60 BPM.
+`fur_elise` plays the complete two-hand score in A minor at 72 BPM, converted
+from the public-domain LilyPond edition. The TUI keeps the hands in separate
+editable layers.
 `ai-dj archetypes` lists them; the TUI picker shows the same list at startup, so you
 never have to start from something random. A test enforces that **no archetype
 uses a vocal patch**.
+
+### Score conversion
+
+`scripts/` converts scores to Strudel: `lilypond_to_strudel.py` compiles
+LilyPond (via `lilypond`) and `musicxml_to_strudel.py` reads MusicXML (via
+`music21`). See [`docs/music-conversion.md`](docs/music-conversion.md).
+
+```bash
+python3 scripts/lilypond_to_strudel.py score.ly --articulate -o score.strudel.js
+```
 
 ## Configuration
 
