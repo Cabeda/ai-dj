@@ -48,7 +48,7 @@ render audio. Run a single module while iterating:
 | `ai_dj/strudel_templates.py` | the 16 archetypes |
 | `ai_dj/llm.py` | prompts, reference loading, Zen Go / llama.cpp clients |
 | `ai_dj/reference/*.md` | the per-language reference appended to the prompt |
-| `ai_dj/session.py` | versioned session storage |
+| `ai_dj/session.py` | versioned session storage + `meta.json` (name, favourite) |
 | `ai_dj/nowplaying.py` | macOS Now Playing / media-key integration (`tools/nowplaying.swift`) |
 | `ai_dj/control.py` | the HTTP control surface shared with the TUI |
 | `ai_dj/tui.py` | launches the loop + control server + the Bun TUI |
@@ -86,6 +86,12 @@ render audio. Run a single module while iterating:
   `strudel/build.sh`.
 - **stdout is the protocol.** The Strudel host and renderer must never write
   anything but JSON to stdout (see gotchas).
+- **Anything a human presses must not wait for a tick.** The loop blocks in
+  `wake.wait(tick)` for up to 10s, so media keys / Now Playing commands are
+  handled in the watcher (~0.2s), never in the tick body.
+- **Three loop modes, and they are different.** `paused` silences the set and
+  freezes the loop; `autopilot` off keeps playing but stops the DJ changing the
+  script; neither is the same as the process stopping.
 
 ## Gotchas
 

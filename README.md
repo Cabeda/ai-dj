@@ -117,15 +117,20 @@ Hear a starter without any model or audio, to check your setup:
 | `shift+enter` | apply the script you edited |
 | `ctrl+a` | select the whole script — then type or paste to replace it |
 | `ctrl+p` | pause / continue — silences the set and freezes the loop |
+| `ctrl+o` | freeze / unfreeze — keep playing, but stop the AI changing it |
+| `ctrl+l` | browse past sessions — name them, favourite them, load one |
 | `enter` *(feedback box)* | send **guide** feedback — nudge the set |
 | `shift+enter` *(feedback box)* | send **replace** feedback — swap the whole vibe |
 | `ctrl+y` | copy the focused pane as clean text |
-| `ctrl+k` | command palette — paste/select the script, copy, reset, pause/continue, **show/hide logs** |
+| `ctrl+k` | command palette — paste/select the script, copy, reset, modes, sessions, **show/hide logs** |
 | `tab` | switch between the script and the feedback box |
 | `ctrl+q` | quit |
 
 **Pause** stops the audio *and* the loop — no captures, no model calls — so a
 paused session costs nothing and continues exactly where it left off.
+**Freeze** is different: the music keeps playing, but the DJ stops touching the
+script, so the set only changes when you edit it. The status bar shows
+`· frozen` while it is on.
 
 Drag to select with the mouse and your terminal copies natively — the TUI does
 not capture the mouse. To **swap in a whole new script**, use the palette's
@@ -240,7 +245,14 @@ ai-dj dry [--seed N]       render a random starter, no audio
 Every evolve is saved as a numbered version under `sessions/<id>/`, with
 `last.mjs` symlinked to the newest. History is bounded (`KEEP_VERSIONS = 200`)
 so an all-day run cannot fill the disk, and pruning is per-extension so a
-symlink can never be orphaned. Resume with `ai-dj pick <id>`.
+symlink can never be orphaned.
+
+`ctrl+l` opens the browser: saved sets on the left with their date, the
+selected script on the right. From there you can **name** a session (`n`),
+**favourite** it (`f` — favourites sort to the top), and **load** its script
+into the running set (`enter`). The name and favourite live in
+`sessions/<id>/meta.json`. Resume from the command line with
+`ai-dj pick <id>`.
 
 ## Contributing
 
