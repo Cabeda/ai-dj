@@ -17,7 +17,7 @@ STRUDEL = "strudel"
 
 # Families group instruments for the model and for building archetypes.
 FAMILIES = (
-    "drums", "bass", "keys", "synth", "strings",
+    "drums", "breaks", "bass", "keys", "synth", "strings",
     "brass", "woodwind", "voice", "fx",
 )
 
@@ -53,6 +53,21 @@ PALETTE = (
     _i("woodblock", "drums", strudel="woodblock"),
     _i("triangle", "drums", strudel="triangle"),
     _i("shaker", "drums", strudel="shaker_large"),
+    # -- breaks (whole drum loops, sampled) ---------------------------------
+    # One entry is a full bar or two of a classic break, not a one-shot. Fire
+    # it once per cycle and stretch it to fit:
+    #   s("break_amen").fit()            one loop per cycle
+    #   s("break_amen").slow(2)          half time
+    #   s("break_amen").chop(8)          slice it for a chopped feel
+    _i("break_amen", "breaks", strudel="amen"),
+    _i("break_think", "breaks", strudel="think"),
+    _i("break_apache", "breaks", strudel="apache"),
+    _i("break_funky_drummer", "breaks", strudel="funkydrummer"),
+    _i("break_kool", "breaks", strudel="kool"),
+    _i("break_sesame", "breaks", strudel="sesame"),
+    _i("break_new_orleans", "breaks", strudel="neworleans"),
+    _i("break_hotline", "breaks", strudel="hotline"),
+    _i("break_sport", "breaks", strudel="sport"),
     # -- bass ---------------------------------------------------------------
     _i("acid_bass", "bass", sonic_pi=":tb303", strudel="sawtooth"),
     _i("sub_bass", "bass", sonic_pi=":sine", strudel="sine"),

@@ -26,6 +26,26 @@ See the *Current instrument palette* table appended at the end of this
 reference — it is generated live and is the authoritative list of instrument
 ids. Do not use any id that is not in that table.
 
+### Drum one-shots vs breaks
+
+The `drums` family is one-shots: put several on a line to build a pattern.
+
+The `breaks` family is different — each entry is a *whole* recorded drum loop
+(amen, think, apache, ...). The palette lists them as `break_*`; use the
+Strudel id column in code (`break_amen` → `s("amen")`). Do not try to play a
+break as a one-shot: trigger it once and stretch it to the cycle.
+
+```
+s("amen").fit()              // one loop per cycle
+s("amen").slow(2)            // half time, heavier
+s("amen").chop(8)            // sliced, for a chopped feel
+s("think").fit().hpf(200)    // thin it out under other layers
+```
+
+A break already carries its own kick, snare and hats, so give it room: do not
+stack a full `drums` pattern on top of it. Pick one or the other as the spine
+of the rhythm.
+
 ## Mini-notation
 
 | Symbol | Meaning | Example |

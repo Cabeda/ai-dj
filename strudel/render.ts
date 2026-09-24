@@ -133,6 +133,11 @@ const SAMPLE_MAPS = [
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json",
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json",
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json",
+  // keep in step with host.ts: a script must render the same way offline as it
+  // plays live
+  "github:yaxu/clean-breaks",
+  "github:Bubobubobubobubo/Dough-Amen",
+  "github:eddyflux/crate",
 ]
 for (const map of SAMPLE_MAPS) {
   try {

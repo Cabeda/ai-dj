@@ -82,6 +82,13 @@ const SAMPLE_MAPS = [
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json",
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json",
   "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json",
+  // Banks the palette names directly. Prebaking registers the sample URLs at
+  // boot (cheap — the audio still loads lazily), so a set can use them without
+  // its own `samples(...)` call, and the capture renderer does not have to
+  // fetch them mid-render.
+  "github:yaxu/clean-breaks",
+  "github:Bubobubobubobubo/Dough-Amen",
+  "github:eddyflux/crate",
 ]
 const loaded: string[] = []
 for (const map of SAMPLE_MAPS) {

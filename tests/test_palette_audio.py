@@ -38,7 +38,7 @@ class PaletteAuditTests(unittest.TestCase):
             be.boot(timeout=90)
             for ins in palette.for_backend(palette.STRUDEL):
                 sid = ins.realisations[palette.STRUDEL]
-                if ins.family in ("drums", "fx"):
+                if ins.family in ("drums", "fx", "breaks"):
                     code = f's("{sid}").gain(0.9)'
                 else:
                     code = f'note("c3 e3").s("{sid}").gain(0.9).slow(2)'

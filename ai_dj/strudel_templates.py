@@ -90,6 +90,10 @@ _EXTRA = {
     "folkharp": 'n("0 4 2 5 3 7").scale("{key}:{mode}").s("folkharp")'
                 '.gain(rand.range(0.3,0.45)).room(0.4).slow(2)',
     "sax":      'n("4 2 0 2").scale("{key}:{mode}").s("sax").gain(0.3)',
+    # a whole break, stretched to the cycle: it already carries kick, snare and
+    # hats, so it is the rhythm on its own — do not stack a drum kit on it
+    "break":    's("amen").fit().gain(rand.range(0.55,0.75)).room(0.15)'
+                '.lpf(perlin.range(2500,5500).slow(16))',
 }
 _LAYER_BODIES.update(_EXTRA)
 
@@ -155,7 +159,7 @@ _ARCHETYPES = {
     # electronic
     "techno":    _arch("kick808", "hat", "acid", "vinyl"),
     "house":     _arch("kick", "hat", "acid", "rhodes"),
-    "downtempo": _arch("kick808", "shaker", "rhodes", "vinyl"),
+    "downtempo": _arch("break", "rhodes", "sub", "vinyl"),
     "synthwave": _arch("kick808", "hat", "acid", "lead", "arp"),
     # focus / ambient: no drums or a very soft pulse, built for long listening
     "ambient":   _arch("padrich", "strings", "vibes", "vinyl"),
