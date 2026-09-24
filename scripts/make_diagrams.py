@@ -277,8 +277,8 @@ def tui_mock(t, palette=False):
 
     # hints
     b.append(text(28, H - 30,
-                  "shift+enter apply   ·   select text to copy   ·   "
-                  "ctrl+k commands   ·   ctrl+q quit",
+                  "shift+enter apply   ·   ctrl+p pause   ·   "
+                  "select text to copy   ·   ctrl+k commands   ·   ctrl+q quit",
                   size=11.5, fill=t["muted"]))
 
     if palette:

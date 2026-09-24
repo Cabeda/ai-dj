@@ -116,12 +116,16 @@ Hear a starter without any model or audio, to check your setup:
 |---|---|
 | `shift+enter` | apply the script you edited |
 | `ctrl+a` | select the whole script — then type or paste to replace it |
+| `ctrl+p` | pause / continue — silences the set and freezes the loop |
 | `enter` *(feedback box)* | send **guide** feedback — nudge the set |
 | `shift+enter` *(feedback box)* | send **replace** feedback — swap the whole vibe |
 | `ctrl+y` | copy the focused pane as clean text |
-| `ctrl+k` | command palette — paste/select the script, copy, reset, stop/resume, **show/hide logs** |
+| `ctrl+k` | command palette — paste/select the script, copy, reset, pause/continue, **show/hide logs** |
 | `tab` | switch between the script and the feedback box |
 | `ctrl+q` | quit |
+
+**Pause** stops the audio *and* the loop — no captures, no model calls — so a
+paused session costs nothing and continues exactly where it left off.
 
 Drag to select with the mouse and your terminal copies natively — the TUI does
 not capture the mouse. To **swap in a whole new script**, use the palette's
