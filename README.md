@@ -187,17 +187,23 @@ Why Strudel, and the packaging constraints it brings, are recorded in
 
 ## Instruments and archetypes
 
-The model may only choose from a closed **instrument palette** — 64 instruments,
+The model may only choose from a closed **instrument palette** — 73 instruments,
 each with a per-backend realisation:
 
 - **General MIDI soundfonts** (`gm_violin`, `gm_cello`, `gm_piano`, …) for the
   classical palette,
 - **real samples** via VCSL (`harp`, `timpani`, `marimba`, …),
-- **drum machines** (`RolandTR909_*`, `RolandTR808_*`, …).
+- **drum machines** (`RolandTR909_*`, `RolandTR808_*`, …),
+- **whole drum breaks** (`break_amen`, `break_think`, `break_apache`, …) from
+  [clean-breaks](https://github.com/yaxu/clean-breaks) and
+  [Dough-Amen](https://github.com/Bubobubobubobubo/Dough-Amen) — a recorded loop
+  rather than a one-shot, which is what the trip-hop `downtempo` archetype is
+  built on.
 
 The palette is generated into the model's prompt at build time
 (`palette.as_markdown()`), so the reference can never drift from what actually
-plays.
+plays. The sample banks the palette names are prebaked by the host, so a set can
+use them without a `samples(...)` call of its own.
 
 **16 archetypes** cover focus and classical material — `deep_focus`, `drone`,
 `lofi_study`, `piano_study`, `vibes_room`, `marimba_room`, `string_quartet`,

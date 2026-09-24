@@ -128,6 +128,10 @@ These cost real debugging time; they are not obvious from the code.
   blocks the event loop and stutters the music.
 - **Silence `console.*` before importing Strudel.** superdough logs a deprecation
   warning per scheduled node; on stdout that corrupts the JSON protocol.
+- **`SAMPLE_MAPS` must stay identical in `host.ts` and `render.ts`.** A script
+  has to render the same way offline as it plays live; drift means captures
+  disagree with what you heard. Prebaking a bank only registers its sample URLs
+  (cheap) — the audio still loads lazily.
 
 **TUI (`tui/index.ts`)**
 
