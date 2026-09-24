@@ -39,6 +39,15 @@ class ValidStrudelTests(unittest.TestCase):
     def test_ruby_gate_still_works_for_sonic_pi(self):
         self.assertTrue(valid_ruby("use_bpm 90\nplay 60"))
 
+    def test_a_strudel_layer_validates_without_a_sonic_pi_header(self):
+        # Regression: the evolve gate used to validate the model's layer body
+        # wrapped in `use_bpm <bpm>` (a Sonic Pi header). valid_strudel rejects
+        # `use_bpm`, so every Strudel patch was silently discarded and the set
+        # never changed. A layer body must validate on its own.
+        layer = 'note("c3 e3 g3").s("gm_violin").gain(0.4).room(0.4)'
+        self.assertTrue(valid_strudel(layer))
+        self.assertFalse(valid_strudel(f"use_bpm 90\n\n{layer}"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,15 +38,14 @@ def _write_log(tag, text):
 
 
 def _tee(stream, tag):
-    """Copy a subprocess stream to the log file, and to the original stream."""
+    """Copy a subprocess stream to the log file only.
+
+    OpenTUI owns the terminal, so echoing here would corrupt the screen. The
+    log file is where a run gets debugged after the fact.
+    """
     try:
         for line in stream:
             _write_log(tag, line.rstrip("\n"))
-            try:
-                sys.stderr.write(line)
-                sys.stderr.flush()
-            except Exception:
-                pass
     except Exception as e:  # stream closed
         _write_log(tag, f"(stream ended: {e})")
 
@@ -83,8 +82,14 @@ def launch(a, provider, model, base_url, key):
     ctl.log(f"[tui] log file: {log_path()}")
 
     from .cli import make_backend
+    # The host writes its diagnostics (sample loads, capture peaks) to stderr.
+    # Under the TUI that must go to the run log, never the screen.
     try:
-        backend = make_backend(a, log=ctl.log)
+        host_stderr = open(log_path(), "a")
+    except OSError:
+        host_stderr = None
+    try:
+        backend = make_backend(a, log=ctl.log, stderr=host_stderr)
     except Exception as e:
         import traceback
         ctl.log(f"[tui] backend failed to start: {e}")

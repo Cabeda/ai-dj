@@ -100,11 +100,14 @@ def resolve_llm(a):
     return "go", a.model or llm.DEFAULT_MODEL, None, key
 
 
-def make_backend(a, log=print):
+def make_backend(a, log=print, stderr=None):
     """Build the sound backend for this run.
 
     Default is Strudel (headless, any platform, classical palette).
     `--backend sonic_pi` opts into the Sonic Pi daemon instead.
+
+    `stderr` is where an out-of-process host's diagnostics go (see
+    make_strudel_backend); None inherits the terminal.
     """
     choice = getattr(a, "backend", None) or "strudel"
     if choice == "sonic_pi":
@@ -119,7 +122,7 @@ def make_backend(a, log=print):
                 log(f"[audio] following system default output: {act['name']} ({act['transport']})")
         return backend
     from .backend import make_strudel_backend
-    return make_strudel_backend(log=log)
+    return make_strudel_backend(log=log, stderr=stderr)
 
 
 def run_live(a, provider, model, base_url, key):

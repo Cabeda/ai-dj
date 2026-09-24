@@ -126,17 +126,21 @@ class SonicPiBackend(SoundBackend):
         self._sp.shutdown()
 
 
-def make_strudel_backend(log=print, bundle=None):
+def make_strudel_backend(log=print, bundle=None, stderr=None):
     """Build the Strudel backend: a Bun host speaking the stdio protocol.
 
     Opt-in for now — see strudel/README.md for status. The host is bundled at
     strudel/host.bundle.mjs (run `bash strudel/build.sh`).
+
+    `stderr` is where the host's own diagnostics go. Leave it None to inherit
+    the terminal (CLI runs); pass an open log file under the TUI, where any
+    stderr write would corrupt the OpenTUI screen.
     """
     import os
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     host = bundle or os.path.join(root, "strudel", "host.bundle.mjs")
-    return StdioBackend(["bun", host], name="strudel", log=log)
+    return StdioBackend(["bun", host], name="strudel", log=log, stderr=stderr)
 
 
 class StdioBackend(SoundBackend):
@@ -158,6 +162,7 @@ class StdioBackend(SoundBackend):
         self._events = []
         self._dead = False
         self._closed = False
+        self._warned_non_json = False
         self._cv = threading.Condition()
 
     # -- process plumbing ---------------------------------------------------
@@ -183,7 +188,13 @@ class StdioBackend(SoundBackend):
             try:
                 event = json.loads(line)
             except ValueError:
-                self.log(f"[stdio] non-JSON from host: {line[:200]}")
+                # The host writes diagnostics to stderr, so stdout should be
+                # pure JSON. A stray line means protocol corruption: note the
+                # first one as a canary, then stay quiet rather than flooding
+                # the log with library chatter.
+                if not self._warned_non_json:
+                    self._warned_non_json = True
+                    self.log(f"[stdio] non-JSON from host (further lines hidden): {line[:200]}")
                 continue
             with self._cv:
                 self._events.append(event)

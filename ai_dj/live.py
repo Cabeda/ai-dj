@@ -224,7 +224,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     def apply_manual(manual):
         nonlocal script, prev_sig
         if not valid(manual):
-            log("[manual] rejected edit (ruby -c failed)")
+            log(f"[manual] rejected edit (invalid {lang})")
             return
         with apply_lock:
             layers = parse_layers(manual)
@@ -279,13 +279,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             else:
                 ruby = decided.get("ruby", "")
                 if not valid(ruby):
-                    raise ValueError("seed script failed ruby -c")
+                    raise ValueError(
+                        f"seed script invalid for {lang}: {ruby[:160].strip()!r}")
                 # keep the archetype's tempo/key/mode — the seed supplies
                 # musical content inside the session, not a new identity
                 state.adopt_seed(ruby, decided.get("hearing"), keep_identity=True)
                 script = state.render()
                 if not valid(script):
-                    raise ValueError("rendered seed failed ruby -c")
+                    raise ValueError(f"rendered seed invalid for {lang}")
                 name = session.save_script(sess_path, script, lang=lang)
                 backend.play(script)
                 log(f"[seed] applied {name} ({len(state.layers)} layers, {state.bpm}bpm {state.key})")
@@ -395,8 +396,9 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                         backend.play(script)
                         sync_state(script)
                     log(f"[tick {ticks}] deterministic variation (no model call)")
-                else:
-                    log(f"[tick {ticks}] hold (diff={changed:.1f})")
+                elif ticks % 6 == 0:
+                    # nothing happened — a once-a-minute heartbeat is enough
+                    log(f"[tick {ticks}] holding (diff={changed:.1f})")
                 continue
 
             plan = state.plan_next()
@@ -427,13 +429,15 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 continue
 
             # validate BEFORE mutating state — a bad patch must not
-            # overwrite the last-good layers in state/render.
+            # overwrite the last-good layers in state/render. The model
+            # returns a single layer body, so validate it on its own: wrapping
+            # it in a Sonic Pi header would make every Strudel patch fail
+            # (valid_strudel rejects `use_bpm`).
             ruby = (decided.get("ruby") or "").strip()
             kind = (decided.get("op") or {}).get("kind", "modify")
-            if kind != "remove" and ruby and not valid(
-                f"use_bpm {state.bpm}\n\n{ruby}"
-            ):
-                log(f"[llm] seed/evolve returned invalid Ruby; keeping previous script")
+            if kind != "remove" and ruby and not valid(ruby):
+                log(f"[llm] evolve returned invalid {lang} "
+                    f"({ruby[:160].strip()!r}); keeping previous script")
                 last_llm = time.time()
                 continue
 

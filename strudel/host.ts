@@ -39,6 +39,17 @@ if (g.window) {
 g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(Date.now()), 16)
 g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 
+// stdout carries the JSON protocol, so nothing else may write to it. Strudel
+// and superdough log through console.* at call time (a deprecation warning per
+// scheduled node, sample loads, ...), which would corrupt the stream. Route it
+// all to stderr (the run log) before the imports below can emit anything.
+const quiet = () => {}
+console.log = quiet
+console.info = quiet
+console.debug = quiet
+console.warn = (...a: unknown[]) => log(`warn: ${a.map(String).join(" ")}`)
+console.error = (...a: unknown[]) => log(`error: ${a.map(String).join(" ")}`)
+
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
 const { transpiler } = await import("@strudel/transpiler")

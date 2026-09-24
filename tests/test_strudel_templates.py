@@ -114,6 +114,18 @@ class StrudelStateTests(unittest.TestCase):
         self.assertIn("use_bpm", script)
         self.assertIn("live_loop :kick", script)
 
+    def test_variation_nudges_a_strudel_param(self):
+        # Regression: variation() only matched Sonic Pi kwargs (amp:/cutoff:),
+        # so on Strudel it was a permanent no-op and the "deterministic
+        # variation" fallback never fired.
+        state = DJState(bpm=120, key="c", mode="minor",
+                        layers={"piano": 'note("c3 e3").s("gm_piano").gain(0.4)'},
+                        lang="strudel")
+        self.assertTrue(state.variation())
+        self.assertNotEqual(state.layers["piano"],
+                            'note("c3 e3").s("gm_piano").gain(0.4)')
+        self.assertIn(".gain(", state.layers["piano"])
+
 
 if __name__ == "__main__":
     unittest.main()

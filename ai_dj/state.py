@@ -198,11 +198,23 @@ class DJState:
             factor = self.rng.choice([0.9, 0.95, 1.05, 1.1])
             return f"{m.group(1)}{round(val * factor, 3)}"
 
-        new = re.sub(r"(\bamp:\s*)([0-9.]+)", bump, code, count=1)
-        if new == code:
-            new = re.sub(r"(\bcutoff:\s*)([0-9.]+)", bump, code, count=1)
-        if new == code:
-            new = re.sub(r"(\brelease:\s*)([0-9.]+)", bump, code, count=1)
+        if self.lang == "strudel":
+            # method-call params, e.g. .gain(0.3) .room(0.4) .lpf(2000)
+            params = ("gain", "room", "lpf", "hpf", "attack", "release",
+                      "delay", "pan", "shape")
+        else:
+            # Sonic Pi keyword args, e.g. amp: 0.5
+            params = ("amp", "cutoff", "release")
+
+        new = code
+        for param in params:
+            if self.lang == "strudel":
+                pat = rf"(\.{param}\(\s*)([0-9.]+)"
+            else:
+                pat = rf"(\b{param}:\s*)([0-9.]+)"
+            new = re.sub(pat, bump, code, count=1)
+            if new != code:
+                break
         if new != code:
             self.layers[layer] = new
             self.last_layer = layer

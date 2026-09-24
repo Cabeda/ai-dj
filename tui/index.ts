@@ -47,6 +47,11 @@ const renderer = await createCliRenderer({
   exitOnCtrlC: false,
   exitSignals: [],
   backgroundColor: "#0d0f12",
+  // Leave the mouse to the terminal: with reporting off, a drag is a native
+  // selection, so Ghostty's copy-on-select works. Clean-text copies still go
+  // through ctrl+y / the command palette.
+  useMouse: false,
+  enableMouseMovement: false,
 })
 
 const status = new TextRenderable(renderer, {
@@ -138,7 +143,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "shift+enter apply  ·  drag select + ctrl+c copy  ·  ctrl+k commands  ·  ctrl+q quit",
+  content: "shift+enter apply  ·  select text to copy  ·  ctrl+y copy clean script  ·  ctrl+k commands  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,

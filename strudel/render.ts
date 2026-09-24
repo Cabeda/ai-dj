@@ -39,6 +39,16 @@ if (g.window) {
 g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(Date.now()), 16)
 g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 
+// stdout is a single JSON reply, so library logging must never touch it.
+// Strudel/superdough log through console.* at call time; send it to stderr
+// (which the host reads for diagnostics) before the imports below emit.
+const quiet = () => {}
+console.log = quiet
+console.info = quiet
+console.debug = quiet
+console.warn = (...a: unknown[]) => process.stderr.write(`[render] warn: ${a.map(String).join(" ")}\n`)
+console.error = (...a: unknown[]) => process.stderr.write(`[render] error: ${a.map(String).join(" ")}\n`)
+
 const { OfflineAudioContext } = await import("node-web-audio-api")
 
 const core = await import("@strudel/core")
