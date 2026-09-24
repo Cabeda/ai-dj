@@ -49,6 +49,7 @@ render audio. Run a single module while iterating:
 | `ai_dj/llm.py` | prompts, reference loading, Zen Go / llama.cpp clients |
 | `ai_dj/reference/*.md` | the per-language reference appended to the prompt |
 | `ai_dj/session.py` | versioned session storage |
+| `ai_dj/nowplaying.py` | macOS Now Playing / media-key integration (`tools/nowplaying.swift`) |
 | `ai_dj/control.py` | the HTTP control surface shared with the TUI |
 | `ai_dj/tui.py` | launches the loop + control server + the Bun TUI |
 | `ai_dj/quality.py`, `ai_dj/similarity.py` | audio quality and reference-replication scoring |
@@ -141,6 +142,11 @@ These cost real debugging time; they are not obvious from the code.
 
 - Tests live in `tests/` and use `unittest`. Audio-dependent tests skip nothing —
   they render for real, which is why the suite takes minutes.
+- **The suite must stay silent and invisible.** `make_strudel_backend` is
+  silent by default (the app passes `silent=False`), and `live.run` only
+  publishes to Now Playing when the backend is not silent. Never make a test
+  play audio or register with the OS UI; if you add a test that boots the host,
+  assert `be.silent`.
 - `tests/references/*.strudel` are public-domain scores used to check that the
   similarity scorer recognises real music. Keep the analyzer's note order
   (interval histograms are order-sensitive).

@@ -180,10 +180,14 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             return True
         return backend.play(code)
 
+    # what the OS shows as the "track" for this session
+    session_label = prompt or "ai-dj"
+
     if session_id:
         ver, script = session.load_latest(session_id)
         state = DJState.from_script(script, model=model, lang=lang)
         sess_path = os.path.join(session.BASE, session_id)
+        session_label = prompt or session_id
         log(f"[session] resumed {session_id} at {ver} "
             f"({len(state.layers)} layers, {state.bpm}bpm)")
     elif lang == "strudel":
@@ -192,6 +196,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         state = DJState(bpm=info["bpm"], key=info["key"], mode=info["mode"],
                         layers=layers, model=model, lang=lang)
         sess_path = session.create_session(info)
+        session_label = prompt or archetype.replace("_", " ")
         log(f"[session] new session: {os.path.basename(sess_path)}"
             f" | archetype: {archetype}"
             + (f" | guide: {prompt}" if prompt else ""))
@@ -226,6 +231,19 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     play_live(script)
     log("[play] starter running (instant)")
     sync_state(script)
+
+    # macOS: publish the set to the system Now Playing centre so the media keys
+    # and Control Center drive it. Only for a real listening session — a silent
+    # backend means a test or an offline run, which must not touch the OS UI.
+    np = None
+    if getattr(backend, "silent", True) is False:
+        from .nowplaying import NowPlaying
+        np = NowPlaying(log=log)
+        if np.start():
+            np.update(title=session_label, artist="ai-dj", state="playing")
+            log("[nowplaying] media keys and Control Center are live")
+        else:
+            np = None
 
     prev_sig = None
     apply_lock = threading.Lock()
@@ -273,6 +291,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 backend.stop()
                 state.last_action = "paused"
                 log("[cmd] paused")
+                if np:
+                    np.update(state="paused")
                 sync_state(script)
         elif cmd == "resume":
             if paused[0]:
@@ -281,6 +301,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                     play_live(script)
                 state.last_action = "resumed"
                 log("[cmd] resumed")
+                if np:
+                    np.update(state="playing")
                 sync_state(script)
 
     wake = threading.Event()
@@ -350,6 +372,23 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             wake.clear()
             ticks += 1
             rev_before = manual_rev[0]
+
+            # media keys / Control Center, handled before the pause check so
+            # "play" can wake a paused set
+            if np:
+                for remote in np.drain():
+                    if remote == "play":
+                        run_command("resume")
+                    elif remote == "pause":
+                        run_command("pause")
+                    elif remote == "toggle":
+                        run_command("resume" if paused[0] else "pause")
+                    elif remote == "next":
+                        state.advance_section()
+                        np.update(title=f"{session_label} · {state.section}",
+                                  state="paused" if paused[0] else "playing")
+                        log(f"[nowplaying] next -> {state.section}")
+                        sync_state(script)
 
             if paused[0]:
                 # silence is already in effect; skip capture, the model call
@@ -430,6 +469,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
             if boundary:
                 state.advance_section()
                 log(f"[section] -> {state.section} (target energy {state.target_energy()})")
+                if np:
+                    np.update(title=f"{session_label} · {state.section}")
                 sync_state(script)
 
             due = feedback or boundary or (
@@ -521,6 +562,8 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     except KeyboardInterrupt:
         log("\n[bye] stopping")
     finally:
+        if np:
+            np.stop()
         if control:
             control.set_state(running=False)
         backend.shutdown()

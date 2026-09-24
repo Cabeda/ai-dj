@@ -138,6 +138,18 @@ hidden by default**; toggle it from the command palette:
 
 </div>
 
+## Media controls (macOS)
+
+ai-dj publishes the set to the system **Now Playing** centre, so it shows up in
+Control Center and answers the media keys like any other player:
+
+- **play / pause** — continue or pause the set (same as `ctrl+p`)
+- **next** — skip to the next section of the energy arc
+- the volume slider controls the machine's output, which is already ai-dj's
+
+It is best-effort: it needs `swiftc` (Xcode command line tools) and is a silent
+no-op everywhere else. Disable it with `AI_DJ_NOWPLAYING=0`.
+
 ## Architecture
 
 <div align="center">
