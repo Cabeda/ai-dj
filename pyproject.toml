@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-dj"
 version = "0.1.0"
-description = "Generative radio DJ: live-codes Sonic Pi from an audio-listening LLM"
+description = "Generative radio DJ: live-codes a set, listens to its own output, and evolves it with an LLM"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 dependencies = []
 
 [project.optional-dependencies]

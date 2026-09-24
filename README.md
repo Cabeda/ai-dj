@@ -251,7 +251,7 @@ the quality metrics, and reference-replication against public-domain scores.
 
 ## License
 
-ai-dj is MIT (see `pyproject.toml`). It depends on **Strudel**, which is
+ai-dj is [MIT licensed](LICENSE). It depends on **Strudel**, which is
 **AGPL-3.0-or-later** — a distribution that bundles the Strudel host must comply
 with the AGPL. See
 [`docs/adr/0001`](docs/adr/0001-sound-backend-seam-and-strudel.md).
