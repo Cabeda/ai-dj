@@ -161,17 +161,20 @@ describe("state opaque sets", () => {
       bpm: 120, key: "c", mode: "minor", lang: "strudel",
       layers: { [WHOLE_LAYER]: PASTED }, opaque: true, energy: 0.0,
     });
-    expect(low.planNext()).toEqual({ layer: WHOLE_LAYER, direction: "build" });
+    expect(low.planNext().layer).toBe(WHOLE_LAYER);
+    expect(low.planNext().direction).toBe("build");
     const high = new DJState({
       bpm: 120, key: "c", mode: "minor", lang: "strudel",
       layers: { [WHOLE_LAYER]: PASTED }, opaque: true, energy: 1.0,
     });
-    expect(high.planNext()).toEqual({ layer: WHOLE_LAYER, direction: "reduce" });
+    expect(high.planNext().layer).toBe(WHOLE_LAYER);
+    expect(high.planNext().direction).toBe("reduce");
     const even = new DJState({
       bpm: 120, key: "c", mode: "minor", lang: "strudel",
       layers: { [WHOLE_LAYER]: PASTED }, opaque: true, energy: 0.3,
     });
-    expect(even.planNext()).toEqual({ layer: WHOLE_LAYER, direction: "vary" });
+    expect(even.planNext().layer).toBe(WHOLE_LAYER);
+    expect(even.planNext().direction).toBe("vary");
   });
 
   test("evolving an opaque set replaces the whole script", () => {
@@ -198,7 +201,8 @@ describe("state planning and patches", () => {
       bpm: 120, key: "c", mode: "minor", lang: "strudel", layers: oldLayers(),
     });
     const plan = state.planNext();
-    expect(Object.keys(oldLayers())).toContain(plan.layer);
+    expect(plan.layer).not.toBeNull();
+    expect(Object.keys(oldLayers())).toContain(plan.layer!);
     expect(["build", "reduce", "intensify", "vary"]).toContain(plan.direction);
   });
 
