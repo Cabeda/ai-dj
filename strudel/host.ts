@@ -292,11 +292,9 @@ async function handle(msg: any) {
       send({ event: "stopped" })
       break
     case "set_volume":
+      // Applied to `masterVolume` immediately; no reply event, so nothing can
+      // interleave with the capture/play acks the backend waits on.
       masterVolume = Math.max(0, Math.min(1, Number(msg.volume)))
-      {
-        const v = Math.round(masterVolume * 100) / 100
-        if (Number.isFinite(v)) send({ event: "volume", volume: v })
-      }
       break
     case "capture": {
       try {

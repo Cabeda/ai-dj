@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 
 from ai_dj.backend import SonicPiBackend, SoundBackend, StdioBackend
@@ -137,6 +138,32 @@ class StdioBackendTests(unittest.TestCase):
         try:
             be.boot(timeout=5)
             self.assertTrue(be.play("note('c3')"))
+        finally:
+            be.shutdown()
+
+    def test_set_volume_does_not_disturb_a_pending_capture(self):
+        # Regression: set_volume waited for a `volume` ack, and `_wait` pops
+        # events off the same queue as capture. Setting the volume while a
+        # capture was in flight could steal the `captured` event (or swallow an
+        # `error` the capture was waiting to surface).
+        be = StdioBackend([sys.executable, HOST], log=lambda *a: None)
+        try:
+            be.boot(timeout=5)
+            be.set_volume(0.5)
+            be.set_volume(0.25)
+            self.assertEqual(be.capture("/tmp/out.wav", 1), "/tmp/out.wav")
+        finally:
+            be.shutdown()
+
+    def test_set_volume_is_fire_and_forget(self):
+        # it must not block waiting for the host to reply
+        be = StdioBackend([sys.executable, HOST], log=lambda *a: None)
+        try:
+            be.boot(timeout=5)
+            start = time.time()
+            for _ in range(5):
+                be.set_volume(0.5)
+            self.assertLess(time.time() - start, 1.0, "set_volume blocked")
         finally:
             be.shutdown()
 

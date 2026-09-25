@@ -288,10 +288,12 @@ class StdioBackend(SoundBackend):
     def set_volume(self, volume: float) -> None:
         if self._closed:
             return
+        # Fire and forget. The host applies it immediately (it is a variable on
+        # its side), and waiting on the reply would mean competing with the
+        # event queue: `_wait` pops events off the same list as capture, so a
+        # volume ack could steal a pending `captured` (or, worse, swallow an
+        # `error` that a capture was waiting to surface).
         self._send({"op": "set_volume", "volume": float(volume)})
-        # the host answers with the volume it applied (it may quantise); wait so
-        # a caller can trust that the change took, but never hang on it
-        self._wait("volume", 5)
 
     def capture(self, path: str, seconds: float):
         if self._closed:
