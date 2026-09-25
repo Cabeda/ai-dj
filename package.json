@@ -1,0 +1,12 @@
+{
+  "name": "ai-dj",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Generative radio DJ — Bun/TypeScript workspace (see docs/adr/0002*)",
+  "workspaces": [
+    "packages/dj"
+  ],
+  "scripts": {
+    "test": "bun test packages/dj"
+  }
+}

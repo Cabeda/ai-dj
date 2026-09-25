@@ -34,6 +34,18 @@ _Avoid_: sound bank, library.
 A saved, numbered set that can be resumed.
 _Avoid_: project, song, track.
 
+**Station**:
+An always-on live set you tune into — the thing the website plays. One station
+runs continuously whether or not anyone is listening. Distinct from a Session,
+which is a saved set.
+_Avoid_: channel, stream.
+
+**Steering**:
+One visitor's direction to the Station — a nudge toward a mood, a tempo, a
+change. Open to everyone; each one passes the bad-words guard before the loop
+reads it.
+_Avoid_: vote, request.
+
 **Archetype**:
 A named, curated starting point for a set — a genre or an ensemble.
 _Avoid_: template, preset, style.

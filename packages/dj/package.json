@@ -1,0 +1,17 @@
+{
+  "name": "@ai-dj/dj",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ai-dj brain: palette, state, templates, loop (Bun/TS port of ai_dj/)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "check": "bunx tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^5"
+  }
+}
