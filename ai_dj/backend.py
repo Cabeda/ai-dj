@@ -289,6 +289,9 @@ class StdioBackend(SoundBackend):
         if self._closed:
             return
         self._send({"op": "set_volume", "volume": float(volume)})
+        # the host answers with the volume it applied (it may quantise); wait so
+        # a caller can trust that the change took, but never hang on it
+        self._wait("volume", 5)
 
     def capture(self, path: str, seconds: float):
         if self._closed:

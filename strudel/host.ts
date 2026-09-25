@@ -109,14 +109,36 @@ try {
 
 const ctx: any = getAudioContext()
 
-// Master volume is applied by the model per event (via `gain`), not by
-// shadowing ctx.destination: superdough reads destination.maxChannelCount when
-// building its output, and a shadowed node reports 0 channels, which breaks
-// node creation. set_volume is therefore a no-op hook for now.
-let master: any = null
+// Master volume. Superdough reads `destination.maxChannelCount` when building
+// its output, so shadowing `ctx.destination` with a GainNode makes that read 0
+// and breaks node creation. Instead scale each event's `gain` on the way to the
+// output — per-event volume is how superdough expects it anyway, and it leaves
+// the destination untouched.
+let masterVolume = 1
+
+function scaledOutput(): any {
+  const base = getTrigger({
+    getTime: () => ctx.currentTime,
+    defaultOutput: webaudioOutput,
+  })
+  return (...args: any[]) => {
+    if (masterVolume < 1) {
+      // hap.value is the control object superdough reads; mutate its gain in
+      // place rather than spreading it, since it is not a plain record.
+      const value = (args[0] as any)?.value
+      if (value && typeof value === "object") {
+        const g = value.gain
+        if (g == null) value.gain = masterVolume
+        else if (typeof g === "number") value.gain = g * masterVolume
+        // a string or signal gain is left alone
+      }
+    }
+    return base(...args)
+  }
+}
 
 const scheduler = new Cyclist({
-  onTrigger: getTrigger({ getTime: () => ctx.currentTime, defaultOutput: webaudioOutput }),
+  onTrigger: scaledOutput(),
   getTime: () => ctx.currentTime,
 })
 scheduler.setCps(0.5) // 120 bpm in 4/4
@@ -176,6 +198,9 @@ async function captureNow(path: string, seconds: number) {
     seconds,
     cps: scheduler.cps,
     out: path,
+    // apply the same master volume the live path uses, so a recording matches
+    // what was heard
+    volume: masterVolume,
   })
   const renderer = fileURLToPath(new URL("./render.bundle.mjs", import.meta.url))
   const proc = Bun.spawn(["bun", renderer], {
@@ -267,8 +292,11 @@ async function handle(msg: any) {
       send({ event: "stopped" })
       break
     case "set_volume":
-      // see note above: applied per-event via `gain`, not a master node
-      if (master) master.gain.value = Math.max(0, Math.min(1, Number(msg.volume) || 0))
+      masterVolume = Math.max(0, Math.min(1, Number(msg.volume)))
+      {
+        const v = Math.round(masterVolume * 100) / 100
+        if (Number.isFinite(v)) send({ event: "volume", volume: v })
+      }
       break
     case "capture": {
       try {

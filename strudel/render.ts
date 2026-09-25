@@ -173,8 +173,23 @@ function encodeWav(left: Float32Array, right: Float32Array, sampleRate: number) 
   return buf
 }
 
+// hap.value is a control object that superdough reads directly; it is not a
+// plain record, so it must be mutated rather than spread into.
+function scaleGain(value: any, master: number): void {
+  if (master >= 1 || !value || typeof value !== "object") return
+  const g = value.gain
+  if (g == null) {
+    value.gain = master
+  } else if (typeof g === "number") {
+    value.gain = g * master
+  }
+  // a string or signal gain cannot be scaled without evaluating it, so it is
+  // left alone and the master volume does not apply to that layer
+}
+
 async function render(req: any) {
-  const { script, seconds, cps, out } = req
+  const { script, seconds, cps, out, volume = 1 } = req
+  const master = Math.max(0, Math.min(1, Number(volume)))
   const sampleRate = 48000
   const oc = new OfflineAudioContext({
     numberOfChannels: 2,
@@ -198,6 +213,7 @@ async function render(req: any) {
   for (const hap of haps) {
     if (!hap.hasOnset()) continue
     try {
+      scaleGain(hap.value, master)
       await sd.superdough(
         hap.value,
         hap.whole.begin.valueOf() / cps,

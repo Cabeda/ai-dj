@@ -159,7 +159,7 @@ feedbackPanel.add(feedback)
 
 const hints = new TextRenderable(renderer, {
   id: "hints",
-  content: "shift+enter apply  ·  shift+arrows select · del removes it (copies on select)  ·  ctrl+p pause  ·  ctrl+k commands  ·  ctrl+q quit",
+  content: "shift+enter apply  ·  ctrl+p pause  ·  ctrl+= / ctrl+- volume  ·  ctrl+u mute  ·  ctrl+k commands  ·  ctrl+q quit",
   fg: "#55606d",
   bg: "#12151a",
   height: 1,
@@ -347,6 +347,8 @@ let seenScriptRev = -1
 let logVisible = false
 let paused = false
 let autopilot = true
+let volume = 1
+let lastAudibleVolume = 0.7
 let currentSessionId = ""
 let sessionsOpen = false
 let sessions: SessionRow[] = []
@@ -481,6 +483,23 @@ function toggleAutopilot() {
     : "ai-dj  frozen — only your edits change the script"
 }
 
+// Volume: the loop owns the value and scales the whole mix. Stepped, not
+// continuous, so a held key cannot run away.
+function changeVolume(step: number) {
+  volume = Math.max(0, Math.min(1, Math.round((volume + step) * 100) / 100))
+  void post("/command", { cmd: `volume ${volume}` })
+  status.content = volume <= 0
+    ? "ai-dj  muted"
+    : `ai-dj  volume ${Math.round(volume * 100)}%`
+}
+
+function toggleMute() {
+  volume = volume > 0 ? 0 : lastAudibleVolume
+  if (volume > 0) lastAudibleVolume = volume
+  void post("/command", { cmd: `volume ${volume}` })
+  status.content = volume <= 0 ? "ai-dj  muted" : "ai-dj  unmuted"
+}
+
 // Replace the whole script with the clipboard's text in one step. The
 // terminal's own paste works too, but only after select-all.
 async function pasteScript() {
@@ -516,6 +535,21 @@ const toggleLogsCommand: PaletteCommand = {
   run: () => setLogVisible(!logVisible),
 }
 
+const volumeUpCommand: PaletteCommand = {
+  label: "Volume up",
+  run: () => changeVolume(0.1),
+}
+
+const volumeDownCommand: PaletteCommand = {
+  label: "Volume down",
+  run: () => changeVolume(-0.1),
+}
+
+const muteCommand: PaletteCommand = {
+  label: "Mute / unmute",
+  run: () => toggleMute(),
+}
+
 const togglePauseCommand: PaletteCommand = {
   label: "Pause music",
   run: () => togglePause(),
@@ -546,6 +580,9 @@ const paletteCommands: PaletteCommand[] = [
   },
   togglePauseCommand,
   toggleAutopilotCommand,
+  volumeUpCommand,
+  volumeDownCommand,
+  muteCommand,
   { label: "Browse sessions", run: () => void openSessions() },
   { label: "Name this session", run: () => promptNameSession(currentSessionId, "session") },
   { label: "Favorite this session", run: () => void toggleFavoriteCurrent() },
@@ -1025,6 +1062,14 @@ renderer.keyInput.on("keypress", (key) => {
     togglePause()
   } else if (key.ctrl && (key.name === "o" || key.sequence === "\u000f")) {
     toggleAutopilot()
+  } else if (key.ctrl && (key.name === "]" || key.name === "=" || key.sequence === "\u001d")) {
+    // terminals report ctrl+= as "]" (byte 0x1d)
+    changeVolume(0.1)
+  } else if (key.ctrl && (key.name === "_" || key.name === "-" || key.sequence === "\u001f")) {
+    changeVolume(-0.1)
+  } else if (key.ctrl && key.name === "u") {
+    // not ctrl+m: that byte is identical to Enter, so it would swallow Enter
+    toggleMute()
   } else if (key.ctrl && (key.name === "y" || key.sequence === "\u0019")) {
     copySelection()
   } else if (key.ctrl && (key.name === "c" || key.sequence === "\u0003")) {
@@ -1055,6 +1100,7 @@ async function poll() {
     if (s.awaiting_start && !startOpen) void openStart()
     paused = !!s.paused
     autopilot = s.autopilot !== false
+    volume = typeof s.volume === "number" ? s.volume : volume
     currentSessionId = typeof s.session_id === "string" ? s.session_id : currentSessionId
     togglePauseCommand.label = paused ? "Continue music" : "Pause music"
     toggleAutopilotCommand.label = autopilot
@@ -1064,7 +1110,8 @@ async function poll() {
     const line =
       `ai-dj ${state}${autopilot ? "" : " · frozen"}  ${s.bpm ?? "?"}bpm  ` +
       `${s.key ?? "?"} ${s.mode ?? ""}  ` +
-      `energy ${s.energy ?? "?"}  ${s.section ?? ""}  ·  ${s.model ?? ""}  ·  ${s.last_action ?? ""}`
+      `energy ${s.energy ?? "?"}  ${s.section ?? ""}  vol ${Math.round(volume * 100)}%  ` +
+      `·  ${s.model ?? ""}  ·  ${s.last_action ?? ""}`
     status.content = truncate(line, renderer.width)
 
     const log = (s.log ?? []).slice(-80).join("\n")

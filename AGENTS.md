@@ -26,6 +26,10 @@ python3 -m unittest discover -s tests            # 82 tests, ~3 min (some render
 (cd tui && bunx tsc --noEmit -p tsconfig.json)   # TUI typecheck
 bash strudel/build.sh                            # after editing strudel/*.ts
 
+# the TUI as a single executable (preferred by ai_dj/tui.py when present)
+bash tui/build.sh                                # host platform
+bash tui/build.sh bun-linux-x64                  # cross-target
+
 # docs images (committed)
 python3 scripts/make_diagrams.py                 # SVG (+PNG via rsvg-convert)
 
@@ -57,6 +61,7 @@ render audio. Run a single module while iterating:
 | `strudel/render.ts` | the offline renderer, in its own process |
 | `strudel/analyze.ts` | symbolic note extraction for the similarity tests |
 | `tui/index.ts` | the OpenTUI app |
+| `tui/build.sh` | builds the single-executable TUI (`bun build --compile`) |
 | `CONTEXT.md` | **the glossary — read it first** |
 | `docs/adr/` | architecture decision records |
 
@@ -92,6 +97,11 @@ render audio. Run a single module while iterating:
 - **Three loop modes, and they are different.** `paused` silences the set and
   freezes the loop; `autopilot` off keeps playing but stops the DJ changing the
   script; neither is the same as the process stopping.
+- **Master volume scales per-event `gain`, not the destination.** Never shadow
+  `ctx.destination` with a gain node — superdough reads its
+  `maxChannelCount`. The host and the offline renderer both scale `hap.value`'s
+  gain (mutating it — it is a control object, not a plain record) so a recording
+  matches what was heard. `--volume` / `volume <n|up|down|mute>` drive it.
 - **Nothing plays until a starting point is chosen.** The TUI shows the picker
   while `Control.awaiting_start` is true, and `tui.launch` does not call
   `live.run` until `Control.await_start()` returns. Command-line

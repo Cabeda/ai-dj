@@ -18,6 +18,19 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 _LOGFILE = None
 
 
+def _tui_command():
+    """How to start the TUI.
+
+    A built executable is preferred: it embeds the renderer's native library, so
+    the machine needs no Bun and no `tui/node_modules`. Falls back to `bun run`
+    so a checkout works without a build step.
+    """
+    exe = os.environ.get("AI_DJ_TUI_BIN") or os.path.join(TUI_DIR, "ai-dj-tui")
+    if os.path.exists(exe) and os.access(exe, os.X_OK):
+        return [exe]
+    return ["bun", "run", os.path.join(TUI_DIR, "index.ts")]
+
+
 def log_path():
     if _LOGFILE:
         return _LOGFILE
@@ -118,7 +131,8 @@ def launch(a, provider, model, base_url, key):
                      reference=not getattr(a, "no_reference", False),
                      feedback_enabled=False,
                      reasoning=getattr(a, "reasoning", "none"), control=ctl,
-                     record_dir=getattr(a, "record", None))
+                     record_dir=getattr(a, "record", None),
+                     volume_level=getattr(a, "volume", None))
         except Exception as e:
             import traceback
             ctl.log(f"[loop] fatal: {e}")
@@ -138,7 +152,7 @@ def launch(a, provider, model, base_url, key):
     signal.signal(signal.SIGTTIN, signal.SIG_IGN)
     try:
         proc = subprocess.Popen(
-            ["bun", "run", os.path.join(TUI_DIR, "index.ts")],
+            _tui_command(),
             env=env, stdin=sys.stdin, stdout=sys.stdout,
             stderr=subprocess.PIPE, text=True, bufsize=1,
             start_new_session=False,

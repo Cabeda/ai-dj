@@ -8,6 +8,9 @@ venv/
 # node / tui
 node_modules/
 
+# the compiled TUI executable (built by tui/build.sh)
+tui/ai-dj-tui
+
 # runtime data: generated sessions and captured audio
 sessions/
 *.wav
@@ -32,3 +35,6 @@ strudel/*.bundle.mjs
 
 # run logs
 logs/
+
+# the compiled TUI executable (built by tui/build.sh)
+tui/ai-dj-tui

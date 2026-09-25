@@ -161,7 +161,8 @@ def run_live(a, provider, model, base_url, key):
                reference=not getattr(a, "no_reference", False),
                feedback_enabled=not getattr(a, "no_feedback", False),
                reasoning=getattr(a, "reasoning", "none"),
-               record_dir=getattr(a, "record", None))
+               record_dir=getattr(a, "record", None),
+               volume_level=getattr(a, "volume", None))
 
 
 def run_tui(a, provider, model, base_url, key):
@@ -201,6 +202,8 @@ def cmd_probe(a):
 def _add_start_flags(p):
     p.add_argument("--archetype", default=None,
                    help="starting point; see `ai-dj archetypes`")
+    p.add_argument("--volume", type=float, default=None,
+                   help="starting volume, 0..1 (default 1)")
     p.add_argument("--surprise", action="store_true",
                    help="let the model write the opening set from scratch")
 

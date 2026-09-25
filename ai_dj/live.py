@@ -148,7 +148,7 @@ def _diff(a, b):
 def run(key, model, env, new_seed=None, session_id=None, prompt=None,
         tick=TICK_SECONDS, dry=False, backend=None, provider="go", base_url=None,
         reference=True, feedback_enabled=True, reasoning="none", control=None,
-        record_dir=None, archetype=None):
+        record_dir=None, archetype=None, volume_level=None):
     backend = backend or SonicPiBackend()
     lang = "strudel" if getattr(backend, "name", "") == "strudel" else "sonic_pi"
     valid = valid_strudel if lang == "strudel" else valid_ruby
@@ -161,6 +161,11 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     # it: the set only moves when the user edits it. Distinct from pause, which
     # also silences the audio.
     autopilot = [True]
+    # Master volume, 0..1. The model writes `gain` per event; this scales the
+    # whole mix on top, and survives a script change.
+    volume = [1.0 if volume_level is None else max(0.0, min(1.0, float(volume_level)))]
+    # where to return to when unmuting
+    mute_level = [0.5]
 
     def log(line):
         # TUI owns the terminal — never print there; stdout collides with OpenTUI.
@@ -177,6 +182,7 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                               layers=list(state.layers), last_action=state.last_action,
                               script=script, paused=paused[0],
                               autopilot=autopilot[0],
+                              volume=round(volume[0], 2),
                               session_id=os.path.basename(sess_path))
 
     def play_live(code):
@@ -239,7 +245,13 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
     sync_state(script)
 
     backend.boot()
-    backend.set_volume(1.0)
+    try:
+        backend.set_volume(volume[0])
+    except BackendClosed:
+        raise
+    except Exception as e:
+        # a backend that cannot set volume must not stop the music
+        log(f"[volume] backend refused the initial volume ({e}); continuing")
     play_live(script)
     log("[play] starter running (instant)")
     sync_state(script)
@@ -337,6 +349,44 @@ def run(key, model, env, new_seed=None, session_id=None, prompt=None,
                 state.last_action = "autopilot on"
                 log("[cmd] autopilot on: the DJ is evolving the set again")
                 sync_state(script)
+        elif isinstance(cmd, str) and (cmd.startswith("volume") or cmd.startswith("vol")):
+            apply_volume(cmd)
+
+    # volume steps chosen so a few presses cover the useful range
+    VOLUME_STEPS = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+
+    def apply_volume(cmd):
+        """`volume 0.4` sets, `volume up`/`down` steps, `volume mute` toggles."""
+        arg = cmd.split(None, 1)[1].strip().lower() if " " in cmd else ""
+        current = volume[0]
+        if arg in ("up", "+", ""):
+            nxt = next((v for v in VOLUME_STEPS if v > current + 1e-9), 1.0)
+        elif arg in ("down", "-"):
+            nxt = next((v for v in reversed(VOLUME_STEPS)
+                        if v < current - 1e-9), 0.0)
+        elif arg in ("mute", "unmute"):
+            if arg == "mute":
+                if current > 0:
+                    mute_level[0] = current
+                nxt = 0.0
+            else:
+                nxt = mute_level[0] or 0.5
+        else:
+            try:
+                nxt = max(0.0, min(1.0, float(arg)))
+            except ValueError:
+                log(f"[cmd] volume: expected a number, up, down, or mute (got {arg!r})")
+                return
+        volume[0] = nxt
+        try:
+            backend.set_volume(nxt)
+        except BackendClosed:
+            raise
+        except Exception as e:
+            log(f"[cmd] volume: backend rejected {nxt} ({e})")
+        state.last_action = f"volume {round(nxt * 100)}%"
+        log(f"[cmd] volume {round(nxt * 100)}%")
+        sync_state(script)
 
     def handle_remote(cmd):
         """A media key / Control Center press. Handled in the watcher so it

@@ -85,8 +85,10 @@ pip install -e .
 # 2. the Strudel sound host (installs its deps and bundles the host)
 bash strudel/build.sh
 
-# 3. the TUI
-(cd tui && bun install)
+# 3. the TUI (either build the standalone executable, or install for Bun)
+bash tui/build.sh
+#   …or, to run the TUI from source instead:
+#   (cd tui && bun install)
 
 # 4. your API key (loaded from ~/env by default)
 echo 'export OPENCODE_API_KEY="sk-..."' > ~/env
@@ -97,6 +99,12 @@ echo 'export OPENCODE_API_KEY="sk-..."' > ~/env
 ```bash
 ai-dj tui
 ```
+
+`ai-dj` prefers the built `tui/ai-dj-tui` executable when it exists, so a built
+machine needs no Bun and no `tui/node_modules`. It falls back to `bun run
+tui/index.ts` otherwise (set `AI_DJ_TUI_BIN` to point elsewhere). The binary
+embeds OpenTUI's native library, parser worker and Tree-sitter WASM, so it does
+not need asset extraction or `OTUI_ASSET_ROOT`.
 
 Nothing plays until you pick a **starting point** — the picker lists the
 archetypes by group, your recent sets, and *Surprise me* (let the model write
@@ -115,8 +123,16 @@ ai-dj archetypes                      # what you can start from
 ai-dj tui --archetype downtempo       # a named template
 ai-dj tui --prompt "deep focus"       # a vibe guide for the model
 ai-dj tui --surprise                  # let the model write it
+ai-dj tui --score Fur_Elise.ly --articulate-score  # start from a LilyPond score
 ai-dj pick <session-id>               # resume a saved set
 ```
+
+Score conversion is provided by the standalone `lilypond-to-strudel` package.
+Install LilyPond separately, then install the package with
+`pip install -e packages/lilypond-to-strudel` from this checkout (or install
+`ai-dj[score-conversion]` after publishing the converter package). The same
+conversion API is usable from Python and the package ships its own
+`lilypond-to-strudel` CLI. See [music conversion](docs/music-conversion.md).
 
 Hear a starter without any model or audio, to check your setup:
 
@@ -135,6 +151,8 @@ Hear a starter without any model or audio, to check your setup:
 | `backspace` / `delete` | remove just the selection |
 | `ctrl+p` | pause / continue — silences the set and freezes the loop |
 | `ctrl+o` | freeze / unfreeze — keep playing, but stop the AI changing it |
+| `ctrl+=` / `ctrl+-` | volume up / down (10% steps) |
+| `ctrl+u` | mute / unmute (remembers the level) |
 | `ctrl+l` | browse past sessions — name them, favourite them, load one |
 | `enter` *(feedback box)* | send **guide** feedback — nudge the set |
 | `shift+enter` *(feedback box)* | send **replace** feedback — swap the whole vibe |
@@ -150,6 +168,13 @@ request to hear it.
 **Freeze** is different: the music keeps playing, but the DJ stops touching the
 script, so the set only changes when you edit it. The status bar shows
 `· frozen` while it is on.
+
+**Volume** is a master level on the whole mix: the DJ writes `gain` per layer,
+and this scales all of it, so it survives every script change. It shows in the
+status bar, and the palette has *Volume up* / *Volume down* / *Mute / unmute*.
+The command palette aside, the loop also accepts it as a command
+(`volume 0.4`, `volume up`, `volume mute`), and `--volume 0.6` starts quiet.
+Recordings capture at the same level, so what you save is what you heard.
 
 Selecting text behaves like a terminal: a drag (or `shift+arrows`) highlights a
 passage and puts it on the clipboard, and `backspace`/`delete` then removes just
@@ -261,6 +286,7 @@ ai-dj tui --local --model <name>
 
 | Flag | Meaning |
 |---|---|
+| `--volume 0.6` | starting volume, 0..1 (default 1) |
 | `--backend {strudel,sonic_pi}` | sound engine (default `strudel`) |
 | `--archetype NAME` | start from this template (`ai-dj archetypes`) |
 | `--prompt "..."` | start from a vibe guide for the model |

@@ -7,5 +7,16 @@ name = "ai-dj"
 version = "0.1.0"
 source = { editable = "." }
 
+[package.optional-dependencies]
+score-conversion = [
+    { name = "lilypond-to-strudel" },
+]
+
 [package.metadata]
-provides-extras = ["dev"]
+requires-dist = [{ name = "lilypond-to-strudel", marker = "extra == 'score-conversion'", editable = "packages/lilypond-to-strudel" }]
+provides-extras = ["dev", "score-conversion"]
+
+[[package]]
+name = "lilypond-to-strudel"
+version = "0.1.0"
+source = { editable = "packages/lilypond-to-strudel" }
