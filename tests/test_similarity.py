@@ -7,7 +7,7 @@ import unittest
 from ai_dj import similarity
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ANALYZER = os.path.join(ROOT, "strudel", "analyze.bundle.mjs")
+ANALYZER = os.path.join(ROOT, "packages", "strudel", "analyze.bundle.mjs")
 REFERENCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "references")
 
 

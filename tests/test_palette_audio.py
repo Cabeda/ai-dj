@@ -5,7 +5,7 @@ import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BUNDLE = os.path.join(ROOT, "strudel", "host.bundle.mjs")
+BUNDLE = os.path.join(ROOT, "packages", "strudel", "host.bundle.mjs")
 
 
 def _peak(path):

@@ -9,4 +9,4 @@ bun install
 bun build host.ts   --target=bun --external node-web-audio-api --outfile host.bundle.mjs
 bun build render.ts  --target=bun --external node-web-audio-api --outfile render.bundle.mjs
 bun build analyze.ts --target=bun --external node-web-audio-api --outfile analyze.bundle.mjs
-echo "built strudel/host.bundle.mjs, render.bundle.mjs, analyze.bundle.mjs"
+echo "built host.bundle.mjs, render.bundle.mjs, analyze.bundle.mjs"

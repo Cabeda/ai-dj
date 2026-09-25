@@ -139,7 +139,7 @@ def make_strudel_backend(log=print, bundle=None, stderr=None, silent=True):
     """Build the Strudel backend: a Bun host speaking the stdio protocol.
 
     Opt-in for now — see strudel/README.md for status. The host is bundled at
-    strudel/host.bundle.mjs (run `bash strudel/build.sh`).
+    packages/strudel/host.bundle.mjs (run `bash packages/strudel/build.sh`).
 
     `stderr` is where the host's own diagnostics go. Leave it None to inherit
     the terminal (CLI runs); pass an open log file under the TUI, where any
@@ -154,7 +154,7 @@ def make_strudel_backend(log=print, bundle=None, stderr=None, silent=True):
     import os
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    host = bundle or os.path.join(root, "strudel", "host.bundle.mjs")
+    host = bundle or os.path.join(root, "packages", "strudel", "host.bundle.mjs")
     if os.environ.get("AI_DJ_SILENT") == "1":
         silent = True
     env = dict(os.environ)

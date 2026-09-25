@@ -12,42 +12,15 @@
 //   -> {"ok": true, "path": "...", "peak": 0.12} | {"ok": false, "error": "..."}
 
 import "node-web-audio-api/polyfill.js"
+import { installDomShims, silenceConsole } from "./prelude"
 
-const g = globalThis as any
-const noop = () => {}
-g.document ??= {
-  addEventListener: noop,
-  removeEventListener: noop,
-  dispatchEvent: () => true,
-  createElement: () => ({ style: {}, getContext: () => null, appendChild: noop, click: noop }),
-  createElementNS: () => ({ style: {}, appendChild: noop }),
-  body: { appendChild: noop, removeChild: noop },
-  documentElement: { style: {} },
-}
-g.CustomEvent ??= class CustomEvent {
-  constructor(type: string, opts?: { detail?: unknown }) {
-    ;(this as any).type = type
-    ;(this as any).detail = opts?.detail
-  }
-}
-g.navigator ??= { userAgent: "bun" }
-if (g.window) {
-  g.window.addEventListener ??= noop
-  g.window.removeEventListener ??= noop
-  g.window.dispatchEvent ??= () => true
-}
-g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(Date.now()), 16)
-g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
+installDomShims()
 
 // stdout is a single JSON reply, so library logging must never touch it.
 // Strudel/superdough log through console.* at call time; send it to stderr
 // (which the host reads for diagnostics) before the imports below emit.
-const quiet = () => {}
-console.log = quiet
-console.info = quiet
-console.debug = quiet
-console.warn = (...a: unknown[]) => process.stderr.write(`[render] warn: ${a.map(String).join(" ")}\n`)
-console.error = (...a: unknown[]) => process.stderr.write(`[render] error: ${a.map(String).join(" ")}\n`)
+silenceConsole((level, text) =>
+  process.stderr.write(`[render] ${level}: ${text}\n`))
 
 const { OfflineAudioContext } = await import("node-web-audio-api")
 
@@ -129,16 +102,7 @@ try {
   registerSoundfonts?.()
 } catch {}
 
-const SAMPLE_MAPS = [
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json",
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json",
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json",
-  // keep in step with host.ts: a script must render the same way offline as it
-  // plays live
-  "github:yaxu/clean-breaks",
-  "github:Bubobubobubobubo/Dough-Amen",
-  "github:eddyflux/crate",
-]
+import { SAMPLE_MAPS, scaleEventGain } from "./prelude"
 for (const map of SAMPLE_MAPS) {
   try {
     await sd.samples(map)
@@ -173,20 +137,6 @@ function encodeWav(left: Float32Array, right: Float32Array, sampleRate: number) 
   return buf
 }
 
-// hap.value is a control object that superdough reads directly; it is not a
-// plain record, so it must be mutated rather than spread into.
-function scaleGain(value: any, master: number): void {
-  if (master >= 1 || !value || typeof value !== "object") return
-  const g = value.gain
-  if (g == null) {
-    value.gain = master
-  } else if (typeof g === "number") {
-    value.gain = g * master
-  }
-  // a string or signal gain cannot be scaled without evaluating it, so it is
-  // left alone and the master volume does not apply to that layer
-}
-
 async function render(req: any) {
   const { script, seconds, cps, out, volume = 1 } = req
   const master = Math.max(0, Math.min(1, Number(volume)))
@@ -213,7 +163,7 @@ async function render(req: any) {
   for (const hap of haps) {
     if (!hap.hasOnset()) continue
     try {
-      scaleGain(hap.value, master)
+      scaleEventGain(hap.value, master)
       await sd.superdough(
         hap.value,
         hap.whole.begin.valueOf() / cps,

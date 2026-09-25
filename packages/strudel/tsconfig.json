@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  // host/render/analyze are intentionally unchecked: the Strudel packages ship
+  // no type declarations, and bundling (not tsc) is their verification, via
+  // the host audio tests. The shared prelude and its tests are checked.
+  "include": ["prelude.ts", "tests"]
+}

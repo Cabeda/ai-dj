@@ -10,45 +10,15 @@
 // exports, which breaks @strudel/core's barrel under Bun/Node ESM.
 
 import "node-web-audio-api/polyfill.js"
+import { SAMPLE_MAPS, installDomShims, scaleEventGain, silenceConsole } from "./prelude"
 
-const g = globalThis as any
-const noop = () => {}
-g.document ??= {
-  addEventListener: noop,
-  removeEventListener: noop,
-  dispatchEvent: () => true,
-  createElement: () => ({ style: {}, getContext: () => null, appendChild: noop, click: noop }),
-  createElementNS: () => ({ style: {}, appendChild: noop }),
-  body: { appendChild: noop, removeChild: noop },
-  documentElement: { style: {} },
-}
-g.CustomEvent ??= class CustomEvent {
-  type: string
-  detail: unknown
-  constructor(type: string, opts?: { detail?: unknown }) {
-    this.type = type
-    this.detail = opts?.detail
-  }
-}
-g.navigator ??= { userAgent: "bun" }
-if (g.window) {
-  g.window.addEventListener ??= noop
-  g.window.removeEventListener ??= noop
-  g.window.dispatchEvent ??= () => true
-}
-g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(Date.now()), 16)
-g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
+installDomShims()
 
 // stdout carries the JSON protocol, so nothing else may write to it. Strudel
 // and superdough log through console.* at call time (a deprecation warning per
 // scheduled node, sample loads, ...), which would corrupt the stream. Route it
 // all to stderr (the run log) before the imports below can emit anything.
-const quiet = () => {}
-console.log = quiet
-console.info = quiet
-console.debug = quiet
-console.warn = (...a: unknown[]) => log(`warn: ${a.map(String).join(" ")}`)
-console.error = (...a: unknown[]) => log(`error: ${a.map(String).join(" ")}`)
+silenceConsole((level, text) => log(`${level}: ${text}`))
 
 const core = await import("@strudel/core")
 const mini = await import("@strudel/mini")
@@ -73,23 +43,7 @@ try {
 } catch (e: any) {
   log(`soundfonts unavailable: ${e?.message ?? e}`)
 }
-// Sample maps. The REPL prebakes these same maps; without them `s("steinway")`
-// or `.bank("RolandTR909")` resolve to nothing and silently render silence.
-//   - tidal-drum-machines: TR-808/909/707/… kits (professional drum machines)
-//   - vcsl: Versilian Community Sample Library (CC0 orchestral/acoustic)
-//   - piano: Salamander-style grand pianos
-const SAMPLE_MAPS = [
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json",
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json",
-  "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json",
-  // Banks the palette names directly. Prebaking registers the sample URLs at
-  // boot (cheap — the audio still loads lazily), so a set can use them without
-  // its own `samples(...)` call, and the capture renderer does not have to
-  // fetch them mid-render.
-  "github:yaxu/clean-breaks",
-  "github:Bubobubobubobubo/Dough-Amen",
-  "github:eddyflux/crate",
-]
+// Sample maps (see prelude.ts; the dirt-samples legacy pack below stays local).
 const loaded: string[] = []
 for (const map of SAMPLE_MAPS) {
   try {
@@ -122,18 +76,8 @@ function scaledOutput(): any {
     defaultOutput: webaudioOutput,
   })
   return (...args: any[]) => {
-    if (masterVolume < 1) {
-      // hap.value is the control object superdough reads; mutate its gain in
-      // place rather than spreading it, since it is not a plain record.
-      const value = (args[0] as any)?.value
-      if (value && typeof value === "object") {
-        const g = value.gain
-        if (g == null) value.gain = masterVolume
-        else if (typeof g === "number") value.gain = g * masterVolume
-        // a string or signal gain is left alone
-      }
-    }
-    return base(...args)
+    if (masterVolume < 1) scaleEventGain((args[0] as any)?.value, masterVolume);
+    return base(...args);
   }
 }
 
@@ -271,20 +215,6 @@ async function handle(msg: any) {
       pattern = res.pattern
       await scheduler.setPattern(pattern, true)
       send({ event: "playing" })
-      break
-    }
-    case "evolve": {
-      // preview a layer change without committing it to the live set
-      const code = msg.script ?? ""
-      try {
-        const { pattern: p } = await evaluate(code, transpiler)
-        // capture() renders currentCode offline, so silent mode still works
-        if (!SILENT) await scheduler.setPattern(p, true)
-        currentCode = code
-        send({ event: "playing" })
-      } catch (e: any) {
-        send({ event: "error", message: `evaluate failed: ${e?.message ?? e}` })
-      }
       break
     }
     case "stop":

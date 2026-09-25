@@ -10,7 +10,7 @@ from ai_dj import quality, strudel_templates as st
 from ai_dj.backend import make_strudel_backend
 from ai_dj.state import DJState
 
-BUNDLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "strudel", "host.bundle.mjs")
+BUNDLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packages", "strudel", "host.bundle.mjs")
 
 
 def _wav(path, dur=2.0, sr=48000, *, soft=False, stereo=False, velocity_var=False):
