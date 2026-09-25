@@ -2,7 +2,18 @@
 
 ## Status
 
-accepted
+accepted, outcome recorded 2026-09-25
+
+Strudel became the default headless backend (not just the strategic one): the
+tracer-bullet blocker, capture, was solved with a separate-process offline
+render, and the engine lives at `packages/strudel/` (`@ai-dj/strudel`) behind
+the same seam. Sonic Pi remains opt-in.
+
+Two cleanups from the same pass: the `evolve` op the host answered was dead
+surface — no sender ever existed — so it was deleted rather than adopted into
+the seam. And on naming: `ruby` stays as the model's wire field (the prompts
+and the parsed JSON say `ruby`), while all code variables prefer `script` per
+the glossary.
 
 ## Context
 

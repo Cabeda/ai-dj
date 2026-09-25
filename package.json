@@ -4,9 +4,13 @@
   "version": "0.1.0",
   "description": "Generative radio DJ — Bun/TypeScript workspace (see docs/adr/0002*)",
   "workspaces": [
-    "packages/dj"
+    "packages/dj",
+    "packages/strudel"
   ],
   "scripts": {
-    "test": "bun test packages/dj"
+    "test": "bun test packages/dj",
+    "test:strudel": "bun test packages/strudel",
+    "check": "bunx tsc --noEmit -p packages/dj/tsconfig.json && bunx tsc --noEmit -p packages/strudel/tsconfig.json",
+    "test:audio": "bun test -t audio"
   }
 }

@@ -83,7 +83,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
 # 2. the Strudel sound host (installs its deps and bundles the host)
-bash strudel/build.sh
+bash packages/strudel/build.sh
 
 # 3. the TUI (either build the standalone executable, or install for Bun)
 bash tui/build.sh
@@ -329,7 +329,7 @@ into the running set (`enter`). The name and favourite live in
 ```bash
 python3 -m unittest discover -s tests     # 82 tests (~3 min; some render audio)
 (cd tui && bunx tsc --noEmit -p tsconfig.json)   # typecheck the TUI
-bash strudel/build.sh                     # rebuild the host after editing strudel/*.ts
+bash packages/strudel/build.sh                     # rebuild the host after editing packages/strudel/*.ts
 python3 scripts/make_diagrams.py          # regenerate the README diagrams
 ```
 
@@ -339,8 +339,8 @@ A few conventions worth knowing:
   (Backend, Script, Layer, Archetype, Casting, …). Use its words.
 - **Architecture decisions live in `docs/adr/`.** Add one when you change a
   load-bearing decision.
-- **`strudel/*.bundle.mjs` is generated** and gitignored — edit the `.ts` and
-  run `strudel/build.sh`, never the bundle.
+- **`packages/strudel/*.bundle.mjs` is generated** and gitignored — edit the `.ts` and
+  run `packages/strudel/build.sh`, never the bundle.
 - **The palette is closed.** Adding an instrument means adding it to
   `ai_dj/palette.py`; it reaches the model automatically.
 - **Non-vocal is a rule, not a default.** No archetype may introduce a voice

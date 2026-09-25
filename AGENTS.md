@@ -18,13 +18,13 @@ Two backends sit behind a `SoundBackend` seam. **Strudel is the default**
 ```bash
 # install
 python3 -m venv .venv && source .venv/bin/activate && pip install -e .
-bash strudel/build.sh          # installs strudel deps + bundles the host
+bash packages/strudel/build.sh  # installs strudel deps + bundles the host
 (cd tui && bun install)
 
 # verify — run these before you claim something works
 python3 -m unittest discover -s tests            # 82 tests, ~3 min (some render audio)
 (cd tui && bunx tsc --noEmit -p tsconfig.json)   # TUI typecheck
-bash strudel/build.sh                            # after editing strudel/*.ts
+bash packages/strudel/build.sh                   # after editing packages/strudel/*.ts
 
 # the TUI as a single executable (preferred by ai_dj/tui.py when present)
 bash tui/build.sh                                # host platform
@@ -57,9 +57,9 @@ render audio. Run a single module while iterating:
 | `ai_dj/control.py` | the HTTP control surface shared with the TUI |
 | `ai_dj/tui.py` | launches the loop + control server + the Bun TUI |
 | `ai_dj/quality.py`, `ai_dj/similarity.py` | audio quality and reference-replication scoring |
-| `strudel/host.ts` | the Bun Strudel host (stdio JSON) |
-| `strudel/render.ts` | the offline renderer, in its own process |
-| `strudel/analyze.ts` | symbolic note extraction for the similarity tests |
+| `packages/strudel/host.ts` | the Bun Strudel host (stdio JSON) |
+| `packages/strudel/render.ts` | the offline renderer, in its own process |
+| `packages/strudel/analyze.ts` | symbolic note extraction for the similarity tests |
 | `tui/index.ts` | the OpenTUI app |
 | `tui/build.sh` | builds the single-executable TUI (`bun build --compile`) |
 | `CONTEXT.md` | **the glossary — read it first** |
@@ -87,8 +87,8 @@ render audio. Run a single module while iterating:
   evolved as one piece (`WHOLE_LAYER`). Never rebuild an opaque set from the
   layer model — that resurrects the previous set, which the user hears as both
   sets playing at once.
-- **`strudel/*.bundle.mjs` is generated and gitignored.** Edit the `.ts`, run
-  `strudel/build.sh`.
+- **`packages/strudel/*.bundle.mjs` is generated and gitignored.** Edit the `.ts`, run
+  `packages/strudel/build.sh`.
 - **stdout is the protocol.** The Strudel host and renderer must never write
   anything but JSON to stdout (see gotchas).
 - **Anything a human presses must not wait for a tick.** The loop blocks in
@@ -175,6 +175,11 @@ These cost real debugging time; they are not obvious from the code.
 
 - Tests live in `tests/` and use `unittest`. Audio-dependent tests skip nothing —
   they render for real, which is why the suite takes minutes.
+- **Test lanes.** The Bun tree splits fast from hardware: `bun test` runs the
+  pure-logic suites; anything that boots audio or renders sound goes in a test
+  whose name contains `audio` and runs via `bun test -t audio` (see root
+  `package.json`). The Python tree keeps the same split by convention: fast
+  lane never crosses the host+bundle seam, slow lane always does.
 - **The suite must stay silent and invisible.** `make_strudel_backend` is
   silent by default (the app passes `silent=False`), and `live.run` only
   publishes to Now Playing when the backend is not silent. Never make a test
