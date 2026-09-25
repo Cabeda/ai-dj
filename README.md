@@ -82,6 +82,9 @@ cd ai-dj
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
+# 1b. the Bun/TypeScript workspace (the rewrite target — see below)
+bun install
+
 # 2. the Strudel sound host (installs its deps and bundles the host)
 bash packages/strudel/build.sh
 
@@ -327,11 +330,19 @@ into the running set (`enter`). The name and favourite live in
 ## Contributing
 
 ```bash
-python3 -m unittest discover -s tests     # 82 tests (~3 min; some render audio)
+python3 -m unittest discover -s tests     # Python suite (~3 min; some render audio)
+bun test packages/dj packages/strudel     # TS suite (fast, pure logic)
 (cd tui && bunx tsc --noEmit -p tsconfig.json)   # typecheck the TUI
+(cd packages/dj && bunx tsc --noEmit)            # typecheck the TS brain
 bash packages/strudel/build.sh                     # rebuild the host after editing packages/strudel/*.ts
 python3 scripts/make_diagrams.py          # regenerate the README diagrams
 ```
+
+> **Rewrite in progress.** The product is migrating from Python (`ai_dj/`) to
+> Bun/TypeScript (`packages/dj/`, `packages/strudel/`) — see
+> `docs/adr/0002-bun-typescript-rewrite.md`. Until a module reaches parity, its
+> Python tests are the source of truth; the `bun:test` suites are the target.
+> New behaviour goes in TypeScript first, with tests.
 
 A few conventions worth knowing:
 
@@ -342,7 +353,9 @@ A few conventions worth knowing:
 - **`packages/strudel/*.bundle.mjs` is generated** and gitignored — edit the `.ts` and
   run `packages/strudel/build.sh`, never the bundle.
 - **The palette is closed.** Adding an instrument means adding it to
-  `ai_dj/palette.py`; it reaches the model automatically.
+  `ai_dj/palette.py` *and* `packages/dj/src/palette.ts` until the Python tree
+  retires; it reaches the model automatically. The TS `asMarkdown()` output is
+  byte-identical to the Python one (checked by hand, not yet by CI).
 - **Non-vocal is a rule, not a default.** No archetype may introduce a voice
   patch.
 

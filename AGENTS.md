@@ -18,12 +18,15 @@ Two backends sit behind a `SoundBackend` seam. **Strudel is the default**
 ```bash
 # install
 python3 -m venv .venv && source .venv/bin/activate && pip install -e .
-bash packages/strudel/build.sh  # installs strudel deps + bundles the host
+bun install                        # the TS workspace (packages/dj, packages/strudel)
+bash packages/strudel/build.sh     # installs strudel deps + bundles the host
 (cd tui && bun install)
-
 # verify — run these before you claim something works
-python3 -m unittest discover -s tests            # 82 tests, ~3 min (some render audio)
+python3 -m unittest discover -s tests            # Python suite (~3 min; some render audio)
+bun test packages/dj packages/strudel            # TS suite (fast, pure logic)
 (cd tui && bunx tsc --noEmit -p tsconfig.json)   # TUI typecheck
+(cd packages/dj && bunx tsc --noEmit)            # TS brain typecheck
+(cd packages/strudel && bunx tsc --noEmit)       # shared prelude typecheck
 bash packages/strudel/build.sh                   # after editing packages/strudel/*.ts
 
 # the TUI as a single executable (preferred by ai_dj/tui.py when present)
@@ -39,7 +42,15 @@ python3 scripts/make_diagrams.py                 # SVG (+PNG via rsvg-convert)
 
 The test suite is slow because several tests boot the real Strudel host and
 render audio. Run a single module while iterating:
-`python3 -m unittest tests.test_lang -v`.
+`python3 -m unittest tests.test_lang -v`, or `bun test packages/dj/tests/state.test.ts`
+for the TS side.
+
+> **Rewrite in progress** (see `docs/adr/0002-bun-typescript-rewrite.md`). The
+> product is moving from `ai_dj/` (Python) to `packages/dj/` + `packages/strudel/`
+> (Bun/TypeScript), tests first. Until a module reaches parity its Python tests
+> are the source of truth; after, the `bun:test` suite is. New behaviour goes in
+> TypeScript first, with tests. The `lilypond-to-strudel` Python package stays
+> Python — it is a tool, not part of the runtime.
 
 ## Layout
 
@@ -57,9 +68,12 @@ render audio. Run a single module while iterating:
 | `ai_dj/control.py` | the HTTP control surface shared with the TUI |
 | `ai_dj/tui.py` | launches the loop + control server + the Bun TUI |
 | `ai_dj/quality.py`, `ai_dj/similarity.py` | audio quality and reference-replication scoring |
+| `packages/dj/src/` | the TS port of the brain: `palette`, `state`, `templates`, `session`, `llm` |
+| `packages/dj/tests/` | the ported suites (`bun:test`) — the target source of truth |
 | `packages/strudel/host.ts` | the Bun Strudel host (stdio JSON) |
 | `packages/strudel/render.ts` | the offline renderer, in its own process |
 | `packages/strudel/analyze.ts` | symbolic note extraction for the similarity tests |
+| `packages/strudel/prelude.ts` | the one shared copy: sample maps, console silencing, DOM shims, gain scaling |
 | `tui/index.ts` | the OpenTUI app |
 | `tui/build.sh` | builds the single-executable TUI (`bun build --compile`) |
 | `CONTEXT.md` | **the glossary — read it first** |

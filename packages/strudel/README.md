@@ -2,8 +2,8 @@
 
 Headless [Strudel](https://strudel.cc) running on Web Audio inside Bun, driven
 by ai-dj over line-delimited JSON on stdio. This is the single-backend target
-from `docs/adr/0001-sound-backend-seam-and-strudel.md`: it can run in the
-terminal (Bun), in an embedded desktop shell, and in the browser.
+from `docs/adr/0001-sound-backend-seam-and-strudel.md` (repo root): it can run in
+the terminal (Bun), in an embedded desktop shell, and in the browser.
 
 ## Status
 
@@ -11,9 +11,8 @@ terminal (Bun), in an embedded desktop shell, and in the browser.
 | --- | --- |
 | `boot` | works (~0.9s) |
 | `play` | works — evaluates Strudel code and schedules it |
-| `evolve` | works — preview a layer change without committing it |
 | `stop` | works |
-| `set_volume` | no-op — volume is per-event `gain` (a master node breaks superdough, see below) |
+| `set_volume` | works — scales each event's `gain` (a master node breaks superdough, see below) |
 | `capture` | **works** — offline render via Strudel's own `renderPatternAudio` |
 
 Capture renders the current pattern through an `OfflineAudioContext` (the same
@@ -24,9 +23,9 @@ built-in synths and the `gm_*` soundfonts. Output is a stereo 48kHz WAV.
 
 - **No master volume node.** SuperDough reads `audioContext.destination.maxChannelCount`
   when building its output. Shadowing `destination` with a `GainNode` makes that
-  read `0` and node creation fails with `Invalid number of channels: 0`. Volume
-  is therefore applied per event via `gain`. A real master bus needs a different
-  approach.
+  read `0` and node creation fails with `Invalid number of channels: 0`. So
+  `set_volume` scales each event's `gain` on the way to the output instead —
+  same result, destination untouched. See `prelude.ts`.
 - **Sampled instruments are samples, not synths.** `s("bd")` and `s("gm_violin")`
   need their banks registered. `registerSynthSounds` covers built-in synths;
   `registerSoundfonts` covers the General MIDI palette. Drum samples still need
